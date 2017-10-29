@@ -1,3 +1,4 @@
+extern crate clap;
 extern crate ole32;
 extern crate regex;
 #[macro_use]
@@ -13,6 +14,9 @@ use std::mem;
 use std::ptr;
 use std::os::windows::ffi::OsStringExt;
 use std::os::windows::ffi::OsStrExt;
+use std::str::FromStr;
+
+use clap::{Arg, App};
 
 use regex::Regex;
 
@@ -149,6 +153,13 @@ fn parse_guid(src: &str) -> Result<winapi::GUID, Box<error::Error>> {
     })
 }
 
+const IID_AUDIO_ENDPOINT_VOLUME: winapi::GUID = winapi::GUID {
+    Data1: 0x5cdf2c82,
+    Data2: 0x841e,
+    Data3: 0x4546,
+    Data4: [0x97, 0x22, 0x0c, 0xf7, 0x40, 0x78, 0x22, 0x9a]
+};
+
 impl<'a> Endpoint<'a> {
     fn id(&self) -> Result<String, Win32Error> {
         unsafe {
@@ -199,25 +210,39 @@ impl<'a> Endpoint<'a> {
             parse_guid(&str).or(Err(SoundCoreError::NotSupported))
         }
     }
+    fn get_mute(&self) -> Result<bool, Win32Error> {
+        unsafe {
+            let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
+            trace!(self.1, "Getting volume control...");
+            check((*self.0).Activate(&IID_AUDIO_ENDPOINT_VOLUME, winapi::CLSCTX_ALL, ptr::null_mut(), &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _))?;
+            trace!(self.1, "Checking if we are muted...");
+            let mut mute = false;
+            let result = check((*ctrl).GetMute(&mut mute));
+            (*ctrl).Release();
+            result?;
+            debug!(self.1, "Muted = {}", mute);
+            Ok(mute)
+        }
+    }
+    fn set_mute(&self, mute: bool) -> Result<(), Win32Error> {
+        unsafe {
+            let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
+            trace!(self.1, "Getting volume control...");
+            check((*self.0).Activate(&IID_AUDIO_ENDPOINT_VOLUME, winapi::CLSCTX_ALL, ptr::null_mut(), &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _))?;
+            info!(self.1, "Setting muted to {}...", mute);
+            let result = check((*ctrl).SetMute(mute, ptr::null_mut()));
+            (*ctrl).Release();
+            result?;
+            Ok(())
+        }
+    }
     fn set_volume(&self, volume: f32) -> Result<(), Win32Error> {
-        const IID_AUDIO_ENDPOINT_VOLUME: winapi::GUID = winapi::GUID {
-            Data1: 0x5cdf2c82,
-            Data2: 0x841e,
-            Data3: 0x4546,
-            Data4: [0x97, 0x22, 0x0c, 0xf7, 0x40, 0x78, 0x22, 0x9a]
-        };
-        const GUID_NULL: winapi::GUID = winapi::GUID {
-            Data1: 0x00000000,
-            Data2: 0x0000,
-            Data3: 0x0000,
-            Data4: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-        };
         unsafe {
             let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
             trace!(self.1, "Getting volume control...");
             check((*self.0).Activate(&IID_AUDIO_ENDPOINT_VOLUME, winapi::CLSCTX_ALL, ptr::null_mut(), &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _))?;
             info!(self.1, "Setting volume to {}...", volume);
-            let result = check((*ctrl).SetMasterVolumeLevelScalar(volume, &GUID_NULL));
+            let result = check((*ctrl).SetMasterVolumeLevelScalar(volume, ptr::null_mut()));
             (*ctrl).Release();
             result?;
             Ok(())
@@ -289,7 +314,7 @@ impl<'a> SoundCore<'a> {
         }
     }
     fn set_speakers(&self, code: u32) {
-        info!(self.1, "Setting speaker configuration to {}...", code);
+        info!(self.1, "Setting speaker configuration to {:x}...", code);
         unsafe {
             let param = Param {
                 context: 0,
@@ -510,7 +535,7 @@ fn get_sound_core<'a>(clsid: &winapi::GUID, id: &str, logger: &'a Logger) -> Res
     Ok(core)
 }
 
-fn go(logger: &Logger) -> Result<(), Box<error::Error>> {
+fn go(logger: &Logger, speakers: u32, volume: Option<f32>) -> Result<(), Box<error::Error>> {
     let endpoint = get_default_endpoint(logger)?;
 
     let id = endpoint.id()?;
@@ -519,14 +544,44 @@ fn go(logger: &Logger) -> Result<(), Box<error::Error>> {
     debug!(logger, "Found clsid {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}", clsid.Data1, clsid.Data2, clsid.Data3, clsid.Data4[0], clsid.Data4[1], clsid.Data4[2], clsid.Data4[3], clsid.Data4[4], clsid.Data4[5], clsid.Data4[6], clsid.Data4[7]);
     let core = get_sound_core(&clsid, &id, &logger)?;
 
-    endpoint.set_volume(0.0)?;
-    core.set_speakers(0x3003);
-    endpoint.set_volume(0.60)?;
+    let premuted = endpoint.get_mute()?;
+    if !premuted {
+        endpoint.set_mute(true)?;
+    }
+    core.set_speakers(speakers);
+    if volume.is_some() {
+        endpoint.set_volume(volume.unwrap())?;
+    }
+    if !premuted {
+        endpoint.set_mute(false)?;
+    }
 
     Ok(())
 }
 
 fn main() {
+    let matches = App::new("sbz-switch")
+        .version("0.1")
+        .about("Switches outputs on Creative Sound Blaster devices")
+        .author("Matthew Donoughe <mdonoughe@gmail.com>")
+        .arg(Arg::with_name("speakers")
+            .short("s")
+            .long("speakers")
+            .value_name("CONFIG")
+            .help("The speaker configuration to use. \"3003\" for stereo speakers, \"80000000\" for headphones.")
+            .takes_value(true)
+            .required(true))
+        .arg(Arg::with_name("volume")
+            .short("v")
+            .long("volume")
+            .value_name("VOLUME")
+            .help("The target volume level, in percent.")
+            .takes_value(true))
+        .get_matches();
+
+    let speakers = u32::from_str_radix(matches.value_of("speakers").unwrap(), 16).unwrap();
+    let volume = matches.value_of("volume").map(|s| f32::from_str(s).unwrap() / 100.0);
+
     let mut builder = TerminalLoggerBuilder::new();
     builder.level(Severity::Trace);
     builder.destination(Destination::Stderr);
@@ -535,7 +590,7 @@ fn main() {
         trace!(logger, "Initializing COM...");
         check(ole32::CoInitializeEx(ptr::null_mut(), winapi::COINIT_APARTMENTTHREADED)).unwrap();
         trace!(logger, "Initialized");
-        let result = go(&logger);
+        let result = go(&logger, speakers, volume);
         trace!(logger, "Uninitializing COM...");
         ole32::CoUninitialize();
         result.unwrap();

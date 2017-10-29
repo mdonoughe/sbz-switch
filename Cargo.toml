@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Matthew Donoughe <mdonoughe@gmail.com>"]
 
 [dependencies]
+clap = "2.27"
 ole32-sys = "0.2"
 regex = "0.2"
 slog = "2.0"
