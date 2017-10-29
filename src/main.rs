@@ -1,6 +1,9 @@
 extern crate ole32;
 extern crate regex;
 #[macro_use]
+extern crate slog;
+extern crate sloggers;
+#[macro_use]
 extern crate winapi;
 
 use std::error;
@@ -12,6 +15,12 @@ use std::os::windows::ffi::OsStringExt;
 use std::os::windows::ffi::OsStrExt;
 
 use regex::Regex;
+
+use slog::Logger;
+
+use sloggers::Build;
+use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::types::Severity;
 
 mod winapiext;
 
@@ -87,22 +96,24 @@ fn check(result: winapi::HRESULT) -> Result<winapi::HRESULT, Win32Error> {
     }
 }
 
-fn get_device_enumerator() -> Result<DeviceEnumerator, Win32Error> {
+fn get_device_enumerator<'a>(logger: &'a Logger) -> Result<DeviceEnumerator<'a>, Win32Error> {
     unsafe {
         let mut enumerator: *mut winapi::IMMDeviceEnumerator = mem::uninitialized();
+        trace!(logger, "Creating DeviceEnumerator...");
         check(ole32::CoCreateInstance(&winapi::CLSID_MMDeviceEnumerator,
                                       ptr::null_mut(), winapi::CLSCTX_ALL,
                                       &winapi::IID_IMMDeviceEnumerator,
                                       &mut enumerator
                                                as *mut *mut winapi::IMMDeviceEnumerator
                                                as *mut _))?;
-        Ok(DeviceEnumerator(enumerator))
+        trace!(logger, "Created DeviceEnumerator");
+        Ok(DeviceEnumerator(enumerator, logger))
     }
 }
 
-struct Endpoint(*mut winapi::IMMDevice);
+struct Endpoint<'a>(*mut winapi::IMMDevice, &'a Logger);
 
-impl Drop for Endpoint {
+impl<'a> Drop for Endpoint<'a> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -138,22 +149,24 @@ fn parse_guid(src: &str) -> Result<winapi::GUID, Box<error::Error>> {
     })
 }
 
-impl Endpoint {
+impl<'a> Endpoint<'a> {
     fn id(&self) -> Result<String, Win32Error> {
         unsafe {
+            trace!(self.1, "Getting device ID...");
             let mut raw_id = mem::uninitialized();
             check((*self.0).GetId(&mut raw_id))?;
             let length = (0..std::isize::MAX).position(|i| *raw_id.offset(i) == 0).unwrap();
-            let str : ffi::OsString = OsStringExt::from_wide(std::slice::from_raw_parts(raw_id, length));
+            let str: ffi::OsString = OsStringExt::from_wide(std::slice::from_raw_parts(raw_id, length));
             ole32::CoTaskMemFree(raw_id as *mut _);
             Ok(str.to_string_lossy().into_owned())
         }
     }
-    fn property_store(&self) -> Result<PropertyStore, Win32Error> {
+    fn property_store(&self) -> Result<PropertyStore<'a>, Win32Error> {
         unsafe {
+            trace!(self.1, "Opening PropertyStore...");
             let mut property_store = mem::uninitialized();
             check((*self.0).OpenPropertyStore(winapiext::STGM_READ, &mut property_store as *mut *mut winapiext::IPropertyStore as *mut _))?;
-            Ok(PropertyStore(property_store))
+            Ok(PropertyStore(property_store, self.1))
         }
     }
     fn clsid(&self) -> Result<winapi::GUID, SoundCoreError> {
@@ -174,6 +187,7 @@ impl Endpoint {
                 Ok(_) => {}
             }
             let property_value = property_result?;
+            trace!(self.1, "Returned variant has type {}", property_value.vt);
             // VT_LPWSTR
             if property_value.vt != 31 {
                 return Err(SoundCoreError::NotSupported)
@@ -181,11 +195,8 @@ impl Endpoint {
             let chars = *(property_value.data.as_ptr() as *mut *mut u16);
             let length = (0..std::isize::MAX).position(|i| *chars.offset(i) == 0).unwrap();
             let str = ffi::OsString::from_wide(std::slice::from_raw_parts(chars, length)).to_string_lossy().into_owned();
-            let parse_result = parse_guid(&str);
-            match parse_result {
-                Ok(id) => Ok(id),
-                Err(_) => Err(SoundCoreError::NotSupported)
-            }
+            trace!(self.1, "Returned variant has value {}", &str);
+            parse_guid(&str).or(Err(SoundCoreError::NotSupported))
         }
     }
     fn set_volume(&self, volume: f32) -> Result<(), Win32Error> {
@@ -203,7 +214,9 @@ impl Endpoint {
         };
         unsafe {
             let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
+            trace!(self.1, "Getting volume control...");
             check((*self.0).Activate(&IID_AUDIO_ENDPOINT_VOLUME, winapi::CLSCTX_ALL, ptr::null_mut(), &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _))?;
+            info!(self.1, "Setting volume to {}...", volume);
             let result = check((*ctrl).SetMasterVolumeLevelScalar(volume, &GUID_NULL));
             (*ctrl).Release();
             result?;
@@ -212,18 +225,19 @@ impl Endpoint {
     }
 }
 
-struct PropertyStore(*mut winapiext::IPropertyStore);
+struct PropertyStore<'a>(*mut winapiext::IPropertyStore, &'a Logger);
 
-impl Drop for PropertyStore {
+impl<'a> Drop for PropertyStore<'a> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
+            trace!(self.1, "Releasing PropertyStore...");
             (*self.0).Release();
         }
     }
 }
 
-impl PropertyStore {
+impl<'a> PropertyStore<'a> {
     fn get_value(&self, key: winapiext::PROPERTYKEY) -> Result<winapiext::PROPVARIANT, Win32Error> {
         unsafe {
             let mut property_value = mem::uninitialized();
@@ -233,38 +247,38 @@ impl PropertyStore {
     }
 }
 
-fn get_default_endpoint() -> Result<Endpoint, Win32Error> {
-    get_device_enumerator()?.get_default_audio_endpoint()
+fn get_default_endpoint<'a>(logger: &'a Logger) -> Result<Endpoint<'a>, Win32Error> {
+    get_device_enumerator(logger)?.get_default_audio_endpoint()
 }
 
-struct DeviceEnumerator(*mut winapi::IMMDeviceEnumerator);
+struct DeviceEnumerator<'a>(*mut winapi::IMMDeviceEnumerator, &'a Logger);
 
-impl DeviceEnumerator {
-    fn get_default_audio_endpoint(&self) -> Result<Endpoint, Win32Error> {
+impl<'a> DeviceEnumerator<'a> {
+    fn get_default_audio_endpoint(&self) -> Result<Endpoint<'a>, Win32Error> {
         unsafe {
+            trace!(self.1, "Getting default endpoint...");
             let mut device = mem::uninitialized();
-            let result = check((*self.0).GetDefaultAudioEndpoint(winapi::eRender, winapi::eConsole, &mut device));
-            match result {
-                Err(e) => Err(e),
-                Ok(_) => Ok(Endpoint(device))
-            }
+            check((*self.0).GetDefaultAudioEndpoint(winapi::eRender, winapi::eConsole, &mut device))?;
+            Ok(Endpoint(device, self.1))
         }
     }
 }
 
-impl Drop for DeviceEnumerator {
+impl<'a> Drop for DeviceEnumerator<'a> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
+            trace!(self.1, "Releasing DeviceEnumerator...");
             (*self.0).Release();
         }
     }
 }
 
-struct SoundCore(*mut ISoundCore);
+struct SoundCore<'a>(*mut ISoundCore, &'a Logger);
 
-impl SoundCore {
+impl<'a> SoundCore<'a> {
     fn bind_hardware(&self, id: &str) {
+        trace!(self.1, "Binding SoundCore to {}...", id);
         let mut buffer = [0; 260];
         for c in ffi::OsStr::new(id).encode_wide().enumerate() {
             buffer[c.0] = c.1;
@@ -275,6 +289,7 @@ impl SoundCore {
         }
     }
     fn set_speakers(&self, code: u32) {
+        info!(self.1, "Setting speaker configuration to {}...", code);
         unsafe {
             let param = Param {
                 context: 0,
@@ -290,10 +305,11 @@ impl SoundCore {
     }
 }
 
-impl Drop for SoundCore {
+impl<'a> Drop for SoundCore<'a> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
+            trace!(self.1, "Releasing SoundCore...");
             (*self.0).Release();
         }
     }
@@ -469,7 +485,7 @@ interface IAudioEndpointVolume(IAudioEndpointVolumeVtbl): IUnknown(IUnknownVtbl)
 }
 );
 
-fn create_sound_core(clsid: &winapi::GUID) -> Result<SoundCore, SoundCoreError> {
+fn create_sound_core<'a>(clsid: &winapi::GUID, logger: &'a Logger) -> Result<SoundCore<'a>, SoundCoreError> {
     const IID_SOUND_CORE: winapi::GUID = winapi::GUID {
         Data1: 0x6111e7c4,
         Data2: 0x3ea4,
@@ -484,24 +500,24 @@ fn create_sound_core(clsid: &winapi::GUID) -> Result<SoundCore, SoundCoreError> 
                                       &mut sc
                                                as *mut *mut ISoundCore
                                                as *mut _))?;
-        Ok(SoundCore(sc))
+        Ok(SoundCore(sc, logger))
     }
 }
 
-fn get_sound_core(clsid: &winapi::GUID, id: &str) -> Result<SoundCore, SoundCoreError> {
-    let core = create_sound_core(clsid)?;
+fn get_sound_core<'a>(clsid: &winapi::GUID, id: &str, logger: &'a Logger) -> Result<SoundCore<'a>, SoundCoreError> {
+    let core = create_sound_core(clsid, logger)?;
     core.bind_hardware(id);
     Ok(core)
 }
 
-fn go() -> Result<(), Box<error::Error>> {
-    let endpoint = get_default_endpoint()?;
+fn go(logger: &Logger) -> Result<(), Box<error::Error>> {
+    let endpoint = get_default_endpoint(logger)?;
 
     let id = endpoint.id()?;
-    println!("Got device {}", id);
+    debug!(logger, "Found device {}", id);
     let clsid = endpoint.clsid()?;
-    println!("Got clsid {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}", clsid.Data1, clsid.Data2, clsid.Data3, clsid.Data4[0], clsid.Data4[1], clsid.Data4[2], clsid.Data4[3], clsid.Data4[4], clsid.Data4[5], clsid.Data4[6], clsid.Data4[7]);
-    let core = get_sound_core(&clsid, &id)?;
+    debug!(logger, "Found clsid {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}", clsid.Data1, clsid.Data2, clsid.Data3, clsid.Data4[0], clsid.Data4[1], clsid.Data4[2], clsid.Data4[3], clsid.Data4[4], clsid.Data4[5], clsid.Data4[6], clsid.Data4[7]);
+    let core = get_sound_core(&clsid, &id, &logger)?;
 
     endpoint.set_volume(0.0)?;
     core.set_speakers(0x3003);
@@ -511,11 +527,18 @@ fn go() -> Result<(), Box<error::Error>> {
 }
 
 fn main() {
+    let mut builder = TerminalLoggerBuilder::new();
+    builder.level(Severity::Trace);
+    builder.destination(Destination::Stderr);
+    let logger = builder.build().unwrap();
     unsafe {
+        trace!(logger, "Initializing COM...");
         check(ole32::CoInitializeEx(ptr::null_mut(), winapi::COINIT_APARTMENTTHREADED)).unwrap();
-        let result = go();
+        trace!(logger, "Initialized");
+        let result = go(&logger);
+        trace!(logger, "Uninitializing COM...");
         ole32::CoUninitialize();
-        result.unwrap()
+        result.unwrap();
+        debug!(logger, "Completed successfully");
     }
-    println!("Hello, world!")
 }
