@@ -115,57 +115,23 @@ fn parse_guid(src: &str) -> Result<winapi::GUID, Box<error::Error>> {
     let re1 = Regex::new(r"^\{([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\}$").unwrap();
     let re2 = Regex::new(r"^([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$").unwrap();
     let re3 = Regex::new(r"^([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$").unwrap();
-    let result = re1.captures(src);
-    match result {
-        Some(caps) => return Ok(winapi::GUID {
-            Data1: u32::from_str_radix(&caps[1], 16)?,
-            Data2: u16::from_str_radix(&caps[2], 16)?,
-            Data3: u16::from_str_radix(&caps[3], 16)?,
-            Data4: [u8::from_str_radix(&caps[4], 16)?,
-                    u8::from_str_radix(&caps[5], 16)?,
-                    u8::from_str_radix(&caps[6], 16)?,
-                    u8::from_str_radix(&caps[7], 16)?,
-                    u8::from_str_radix(&caps[8], 16)?,
-                    u8::from_str_radix(&caps[9], 16)?,
-                    u8::from_str_radix(&caps[10], 16)?,
-                    u8::from_str_radix(&caps[11], 16)?]
-            }),
-        _ => {}
-    }
-    let result = re2.captures(src);
-    match result {
-        Some(caps) => return Ok(winapi::GUID {
-            Data1: u32::from_str_radix(&caps[1], 16)?,
-            Data2: u16::from_str_radix(&caps[2], 16)?,
-            Data3: u16::from_str_radix(&caps[3], 16)?,
-            Data4: [u8::from_str_radix(&caps[4], 16)?,
-                    u8::from_str_radix(&caps[5], 16)?,
-                    u8::from_str_radix(&caps[6], 16)?,
-                    u8::from_str_radix(&caps[7], 16)?,
-                    u8::from_str_radix(&caps[8], 16)?,
-                    u8::from_str_radix(&caps[9], 16)?,
-                    u8::from_str_radix(&caps[10], 16)?,
-                    u8::from_str_radix(&caps[11], 16)?]
-            }),
-        _ => {}
-    }
-    let result = re3.captures(src);
-    match result {
-        Some(caps) => Ok(winapi::GUID {
-            Data1: u32::from_str_radix(&caps[1], 16)?,
-            Data2: u16::from_str_radix(&caps[2], 16)?,
-            Data3: u16::from_str_radix(&caps[3], 16)?,
-            Data4: [u8::from_str_radix(&caps[4], 16)?,
-                    u8::from_str_radix(&caps[5], 16)?,
-                    u8::from_str_radix(&caps[6], 16)?,
-                    u8::from_str_radix(&caps[7], 16)?,
-                    u8::from_str_radix(&caps[8], 16)?,
-                    u8::from_str_radix(&caps[9], 16)?,
-                    u8::from_str_radix(&caps[10], 16)?,
-                    u8::from_str_radix(&caps[11], 16)?]
-            }),
-        None => Err(From::from(SoundCoreError::NotSupported))
-    }
+    let caps = re1.captures(src)
+        .or_else(|| re2.captures(src))
+        .or_else(|| re3.captures(src))
+        .ok_or(SoundCoreError::NotSupported)?;
+    Ok(winapi::GUID {
+        Data1: u32::from_str_radix(&caps[1], 16)?,
+        Data2: u16::from_str_radix(&caps[2], 16)?,
+        Data3: u16::from_str_radix(&caps[3], 16)?,
+        Data4: [u8::from_str_radix(&caps[4], 16)?,
+                u8::from_str_radix(&caps[5], 16)?,
+                u8::from_str_radix(&caps[6], 16)?,
+                u8::from_str_radix(&caps[7], 16)?,
+                u8::from_str_radix(&caps[8], 16)?,
+                u8::from_str_radix(&caps[9], 16)?,
+                u8::from_str_radix(&caps[10], 16)?,
+                u8::from_str_radix(&caps[11], 16)?]
+    })
 }
 
 impl Endpoint {
