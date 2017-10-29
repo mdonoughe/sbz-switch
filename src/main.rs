@@ -115,22 +115,26 @@ fn parse_guid(src: &str) -> Result<winapi::GUID, Box<error::Error>> {
     let re1 = Regex::new(r"^\{([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\}$").unwrap();
     let re2 = Regex::new(r"^([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$").unwrap();
     let re3 = Regex::new(r"^([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$").unwrap();
+
     let caps = re1.captures(src)
         .or_else(|| re2.captures(src))
         .or_else(|| re3.captures(src))
         .ok_or(SoundCoreError::NotSupported)?;
+
+    let mut iter = caps.iter().skip(1).map(|c| c.unwrap().as_str());
+    let l = u32::from_str_radix(iter.next().unwrap(), 16)?;
+    let w1 = u16::from_str_radix(iter.next().unwrap(), 16)?;
+    let w2 = u16::from_str_radix(iter.next().unwrap(), 16)?;
+    let mut array = [0 as u8; 8];
+    for b in iter.enumerate() {
+        array[b.0] = u8::from_str_radix(b.1, 16)?;
+    }
+
     Ok(winapi::GUID {
-        Data1: u32::from_str_radix(&caps[1], 16)?,
-        Data2: u16::from_str_radix(&caps[2], 16)?,
-        Data3: u16::from_str_radix(&caps[3], 16)?,
-        Data4: [u8::from_str_radix(&caps[4], 16)?,
-                u8::from_str_radix(&caps[5], 16)?,
-                u8::from_str_radix(&caps[6], 16)?,
-                u8::from_str_radix(&caps[7], 16)?,
-                u8::from_str_radix(&caps[8], 16)?,
-                u8::from_str_radix(&caps[9], 16)?,
-                u8::from_str_radix(&caps[10], 16)?,
-                u8::from_str_radix(&caps[11], 16)?]
+        Data1: l,
+        Data2: w1,
+        Data3: w2,
+        Data4: array
     })
 }
 
