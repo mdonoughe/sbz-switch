@@ -2,6 +2,15 @@
 name = "sbz-switch"
 version = "0.1.0"
 authors = ["Matthew Donoughe <mdonoughe@gmail.com>"]
+description = "Utility for switching Sound Blaster outputs on Windows"
+repository = "https://github.com/mdonoughe/sbz-switch/"
+readme = "README.md"
+keywords = ["windows", "sound", "sound blaster"]
+categories = ["command-line-utilities", "multimedia::audio"]
+license = "MIT/Apache-2.0"
+
+[badges]
+appveyor = { repository = "https://github.com/mdonoughe/sbz-switch/" }
 
 [dependencies]
 clap = "2.27"
