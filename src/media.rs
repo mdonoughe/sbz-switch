@@ -9,29 +9,49 @@ use std::slice;
 use ole32::{CoCreateInstance, CoTaskMemFree};
 use regex::Regex;
 use slog::Logger;
-use winapi::{CLSCTX_ALL, CLSID_MMDeviceEnumerator, eConsole, eRender, GUID, IID_IMMDeviceEnumerator, IMMDevice, IMMDeviceEnumerator, NTE_NOT_FOUND};
+use winapi::{CLSCTX_ALL, CLSID_MMDeviceEnumerator, eConsole, eRender, GUID,
+             IID_IMMDeviceEnumerator, IMMDevice, IMMDeviceEnumerator, NTE_NOT_FOUND};
 
 use hresult::{Win32Error, check};
 use soundcore::SoundCoreError;
-use winapiext::{IAudioEndpointVolume, IID_AUDIO_ENDPOINT_VOLUME, IPropertyStore, PROPERTYKEY, PROPVARIANT, STGM_READ};
+use winapiext::{IAudioEndpointVolume, IID_AUDIO_ENDPOINT_VOLUME, IPropertyStore, PROPERTYKEY,
+                PROPVARIANT, STGM_READ};
 
 fn get_device_enumerator<'a>(logger: &'a Logger) -> Result<DeviceEnumerator<'a>, Win32Error> {
     unsafe {
         let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
         trace!(logger, "Creating DeviceEnumerator...");
-        check(CoCreateInstance(&CLSID_MMDeviceEnumerator,
-              ptr::null_mut(), CLSCTX_ALL,
-              &IID_IMMDeviceEnumerator,
-              &mut enumerator as *mut *mut IMMDeviceEnumerator as *mut _))?;
+        check(CoCreateInstance(
+            &CLSID_MMDeviceEnumerator,
+            ptr::null_mut(),
+            CLSCTX_ALL,
+            &IID_IMMDeviceEnumerator,
+            &mut enumerator as *mut *mut IMMDeviceEnumerator as *mut _,
+        ))?;
         trace!(logger, "Created DeviceEnumerator");
         Ok(DeviceEnumerator(enumerator, logger))
     }
 }
 
 fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
-    let re1 = Regex::new(r"^\{([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\}$").unwrap();
-    let re2 = Regex::new(r"^([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$").unwrap();
-    let re3 = Regex::new(r"^([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$").unwrap();
+    let re1 = Regex::new(
+        "^\\{([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-\
+        ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
+        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
+        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\\}$",
+    ).unwrap();
+    let re2 = Regex::new(
+        "^([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-\
+        ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
+        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
+        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
+    ).unwrap();
+    let re3 = Regex::new(
+        "^([0-9a-fA-F]{8})([0-9a-fA-F]{4})\
+        ([0-9a-fA-F]{4})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
+        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
+        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
+    ).unwrap();
 
     let caps = re1.captures(src)
         .or_else(|| re2.captures(src))
@@ -51,7 +71,7 @@ fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
         Data1: l,
         Data2: w1,
         Data3: w2,
-        Data4: array
+        Data4: array,
     })
 }
 
@@ -74,7 +94,9 @@ impl<'a> Endpoint<'a> {
             trace!(self.2, "Getting device ID...");
             let mut raw_id = mem::uninitialized();
             check((*self.0).GetId(&mut raw_id))?;
-            let length = (0..isize::MAX).position(|i| *raw_id.offset(i) == 0).unwrap();
+            let length = (0..isize::MAX)
+                .position(|i| *raw_id.offset(i) == 0)
+                .unwrap();
             let str: OsString = OsStringExt::from_wide(slice::from_raw_parts(raw_id, length));
             CoTaskMemFree(raw_id as *mut _);
             Ok(str.to_string_lossy().into_owned())
@@ -84,24 +106,30 @@ impl<'a> Endpoint<'a> {
         unsafe {
             trace!(self.2, "Opening PropertyStore...");
             let mut property_store = mem::uninitialized();
-            check((*self.0).OpenPropertyStore(STGM_READ, &mut property_store as *mut *mut IPropertyStore as *mut _))?;
+            check((*self.0).OpenPropertyStore(
+                STGM_READ,
+                &mut property_store as *mut *mut IPropertyStore as
+                    *mut _,
+            ))?;
             Ok(PropertyStore(property_store, self.2))
         }
     }
     pub fn clsid(&self) -> Result<GUID, SoundCoreError> {
-        const KEY_SOUNDCORECTL_CLSID : PROPERTYKEY = PROPERTYKEY {
+        const KEY_SOUNDCORECTL_CLSID: PROPERTYKEY = PROPERTYKEY {
             fmtid: GUID {
                 Data1: 0xc949c6aa,
                 Data2: 0x132b,
                 Data3: 0x4511,
-                Data4: [0xbb, 0x1b, 0x35, 0x26, 0x1a, 0x2a, 0x63, 0x33]
+                Data4: [0xbb, 0x1b, 0x35, 0x26, 0x1a, 0x2a, 0x63, 0x33],
             },
-            pid: 0
+            pid: 0,
         };
         unsafe {
             let property_result = self.property_store()?.get_value(KEY_SOUNDCORECTL_CLSID);
             match property_result {
-                Err(ref err) if err.code == NTE_NOT_FOUND => return Err(SoundCoreError::NotSupported),
+                Err(ref err) if err.code == NTE_NOT_FOUND => {
+                    return Err(SoundCoreError::NotSupported)
+                }
                 Err(err) => return Err(SoundCoreError::Win32(err)),
                 Ok(_) => {}
             }
@@ -109,11 +137,13 @@ impl<'a> Endpoint<'a> {
             trace!(self.2, "Returned variant has type {}", property_value.vt);
             // VT_LPWSTR
             if property_value.vt != 31 {
-                return Err(SoundCoreError::NotSupported)
+                return Err(SoundCoreError::NotSupported);
             }
             let chars = *(property_value.data.as_ptr() as *mut *mut u16);
             let length = (0..isize::MAX).position(|i| *chars.offset(i) == 0).unwrap();
-            let str = OsString::from_wide(slice::from_raw_parts(chars, length)).to_string_lossy().into_owned();
+            let str = OsString::from_wide(slice::from_raw_parts(chars, length))
+                .to_string_lossy()
+                .into_owned();
             trace!(self.2, "Returned variant has value {}", &str);
             parse_guid(&str).or(Err(SoundCoreError::NotSupported))
         }
@@ -137,7 +167,10 @@ impl<'a> Endpoint<'a> {
     pub fn set_volume(&self, volume: f32) -> Result<(), Win32Error> {
         unsafe {
             info!(self.2, "Setting volume to {}...", volume);
-            check((*self.1).SetMasterVolumeLevelScalar(volume, ptr::null_mut()))?;
+            check((*self.1).SetMasterVolumeLevelScalar(
+                volume,
+                ptr::null_mut(),
+            ))?;
             Ok(())
         }
     }
@@ -176,10 +209,20 @@ impl<'a> DeviceEnumerator<'a> {
         unsafe {
             trace!(self.1, "Getting default endpoint...");
             let mut device = mem::uninitialized();
-            check((*self.0).GetDefaultAudioEndpoint(eRender, eConsole, &mut device))?;
+            check((*self.0).GetDefaultAudioEndpoint(
+                eRender,
+                eConsole,
+                &mut device,
+            ))?;
             let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
             trace!(self.1, "Getting volume control...");
-            let volume = check((*device).Activate(&IID_AUDIO_ENDPOINT_VOLUME, CLSCTX_ALL, ptr::null_mut(), &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _));
+            let volume = check((*device).Activate(
+                &IID_AUDIO_ENDPOINT_VOLUME,
+                CLSCTX_ALL,
+                ptr::null_mut(),
+                &mut ctrl as *mut *mut IAudioEndpointVolume as
+                    *mut _,
+            ));
             match volume {
                 Ok(_) => Ok(Endpoint(device, ctrl, self.1)),
                 Err(err) => {
@@ -201,4 +244,3 @@ impl<'a> Drop for DeviceEnumerator<'a> {
         }
     }
 }
-

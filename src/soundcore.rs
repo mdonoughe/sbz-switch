@@ -57,10 +57,11 @@ impl<'a> SoundCore<'a> {
         for c in OsStr::new(id).encode_wide().enumerate() {
             buffer[c.0] = c.1;
         }
-        let info = HardwareInfo { info_type: 0, info: buffer };
-        unsafe {
-            (*self.0).BindHardware(&info)
-        }
+        let info = HardwareInfo {
+            info_type: 0,
+            info: buffer,
+        };
+        unsafe { (*self.0).BindHardware(&info) }
     }
     pub fn set_speakers(&self, code: u32) {
         info!(self.1, "Setting speaker configuration to {:x}...", code);
@@ -68,11 +69,11 @@ impl<'a> SoundCore<'a> {
             let param = Param {
                 context: 0,
                 feature: 0x1000002,
-                param: 0
+                param: 0,
             };
             let value = ParamValue {
                 kind: 2,
-                value: code
+                value: code,
             };
             (*self.0).SetParamValue(param, value)
         }
@@ -89,18 +90,28 @@ impl<'a> Drop for SoundCore<'a> {
     }
 }
 
-fn create_sound_core<'a>(clsid: &GUID, logger: &'a Logger) -> Result<SoundCore<'a>, SoundCoreError> {
+fn create_sound_core<'a>(
+    clsid: &GUID,
+    logger: &'a Logger,
+) -> Result<SoundCore<'a>, SoundCoreError> {
     unsafe {
         let mut sc: *mut ISoundCore = mem::uninitialized();
-        check(CoCreateInstance(clsid,
-              ptr::null_mut(), CLSCTX_ALL,
-              &IID_SOUND_CORE,
-              &mut sc as *mut *mut ISoundCore as *mut _))?;
+        check(CoCreateInstance(
+            clsid,
+            ptr::null_mut(),
+            CLSCTX_ALL,
+            &IID_SOUND_CORE,
+            &mut sc as *mut *mut ISoundCore as *mut _,
+        ))?;
         Ok(SoundCore(sc, logger))
     }
 }
 
-pub fn get_sound_core<'a>(clsid: &GUID, id: &str, logger: &'a Logger) -> Result<SoundCore<'a>, SoundCoreError> {
+pub fn get_sound_core<'a>(
+    clsid: &GUID,
+    id: &str,
+    logger: &'a Logger,
+) -> Result<SoundCore<'a>, SoundCoreError> {
     let core = create_sound_core(clsid, logger)?;
     core.bind_hardware(id);
     Ok(core)

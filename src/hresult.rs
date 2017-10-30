@@ -10,7 +10,10 @@ pub struct Win32Error {
 
 impl Win32Error {
     pub fn new(code: HRESULT) -> Win32Error {
-        Win32Error { code: code, description: format!("{:08x}", code) }
+        Win32Error {
+            code: code,
+            description: format!("{:08x}", code),
+        }
     }
 }
 
@@ -34,6 +37,6 @@ impl Error for Win32Error {
 pub fn check(result: HRESULT) -> Result<HRESULT, Win32Error> {
     match result {
         err if err < 0 => Err(Win32Error::new(err)),
-        success => Ok(success)
+        success => Ok(success),
     }
 }
