@@ -5,7 +5,7 @@ authors = ["Matthew Donoughe <mdonoughe@gmail.com>"]
 description = "Utility for switching Sound Blaster outputs on Windows"
 repository = "https://github.com/mdonoughe/sbz-switch/"
 readme = "README.md"
-keywords = ["windows", "sound", "sound blaster"]
+keywords = ["windows", "sound"]
 categories = ["command-line-utilities", "multimedia::audio"]
 license = "MIT/Apache-2.0"
 
