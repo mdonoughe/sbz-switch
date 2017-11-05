@@ -10,7 +10,7 @@ categories = ["command-line-utilities", "multimedia::audio"]
 license = "MIT/Apache-2.0"
 
 [badges]
-appveyor = { repository = "https://github.com/mdonoughe/sbz-switch/" }
+appveyor = { repository = "mdonoughe/sbz-switch" }
 
 [dependencies]
 clap = "2.27"
