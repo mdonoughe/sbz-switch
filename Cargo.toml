@@ -16,6 +16,7 @@ appveyor = { repository = "mdonoughe/sbz-switch" }
 clap = "2.27"
 ole32-sys = "0.2"
 regex = "0.2"
-slog = "2.0"
+slog = { version = "2.0", features = ["max_level_trace", "release_max_level_info"] }
 sloggers = "0.2"
+toml = "0.4"
 winapi = "0.2"

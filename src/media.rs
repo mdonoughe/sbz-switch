@@ -174,6 +174,17 @@ impl<'a> Endpoint<'a> {
             Ok(())
         }
     }
+    pub fn get_volume(&self) -> Result<f32, Win32Error> {
+        unsafe {
+            debug!(self.2, "Getting volume...");
+            let mut volume: f32 = mem::uninitialized();
+            check((*self.1).GetMasterVolumeLevelScalar(
+                &mut volume as *mut f32
+            ))?;
+            debug!(self.2, "volume = {}", volume);
+            Ok(volume)
+        }
+    }
 }
 
 struct PropertyStore<'a>(*mut IPropertyStore, &'a Logger);
