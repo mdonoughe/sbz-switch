@@ -146,13 +146,40 @@ impl<'a> SoundCoreParameter<'a> {
             let param = Param {
                 context: self.context,
                 feature: self.feature,
-                param: self.id
+                param: self.id,
             };
             let mut value: ParamValue = mem::uninitialized();
             trace!(self.logger, "Fetching parameter value .{}.{}.{}...", self.context, self.feature, self.id);
             (*self.core).GetParamValue(param, &mut value as *mut ParamValue);
             trace!(self.logger, "Got parameter value .{}.{}.{} = {:?}", self.context, self.feature, self.id, value);
             convert_param_value(&value)
+        }
+    }
+    pub fn set(&self, value: &SoundCoreParamValue) {
+        unsafe {
+            let param = Param {
+                context: self.context,
+                feature: self.feature,
+                param: self.id,
+            };
+            let param_value = ParamValue {
+                kind: match value {
+                    &SoundCoreParamValue::Float(_) => 0,
+                    &SoundCoreParamValue::Bool(_) => 1,
+                    &SoundCoreParamValue::U32(_) => 2,
+                    &SoundCoreParamValue::I32(_) => 3,
+                    _ => panic!("tried to set parameter with nothing"),
+                },
+                value: match value {
+                    &SoundCoreParamValue::Float(f) => mem::transmute(f),
+                    &SoundCoreParamValue::Bool(b) => match b { false => 0, true => 0xffffffff },
+                    &SoundCoreParamValue::U32(u) => u,
+                    &SoundCoreParamValue::I32(i) => mem::transmute(i),
+                    _ => panic!("tried to set parameter with nothing"),
+                }
+            };
+            info!(self.logger, "Setting {} = {:?}", self.description, value);
+            (*self.core).SetParamValue(param, param_value);
         }
     }
 }

@@ -9,7 +9,9 @@ use clap::{Arg, ArgMatches, App, SubCommand};
 
 use std::error::Error;
 use std::fs::File;
+use std::io::BufReader;
 use std::io::prelude::*;
+use std::mem;
 use std::str::FromStr;
 
 use slog::Logger;
@@ -17,7 +19,7 @@ use sloggers::Build;
 use sloggers::terminal::{TerminalLoggerBuilder, Destination};
 use sloggers::types::Severity;
 
-use sbz_switch::{initialize_com, switch, uninitialize_com};
+use sbz_switch::{initialize_com, uninitialize_com};
 
 fn main() {
     let matches = App::new("sbz-switch")
@@ -32,6 +34,14 @@ fn main() {
                 .value_name("FILE")
                 .help("Saves the current settings to a file")
                 .takes_value(true)))
+        .subcommand(SubCommand::with_name("set")
+            .about("sets the current configuration")
+            .arg(Arg::with_name("file")
+                .short("f")
+                .value_name("FILE")
+                .help("File containing the settings to apply")
+                .takes_value(true)
+                .required(true)))
         .subcommand(SubCommand::with_name("switch")
             .arg(
                 Arg::with_name("speakers")
@@ -69,6 +79,7 @@ fn main() {
     let result = match matches.subcommand() {
         ("dump", Some(sub_m)) => dump(&logger, sub_m),
         ("set", Some(sub_m)) => set(&logger, sub_m),
+        ("switch", Some(sub_m)) => switch(&logger, sub_m),
         _ => Ok(())
     };
 
@@ -94,9 +105,22 @@ fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
 }
 
 fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+    let name = matches.value_of("file").unwrap();
+    let file = File::open(name)?;
+    let mut reader = BufReader::new(file);
+    let mut text = String::new();
+    reader.read_to_string(&mut text)?;
+    mem::drop(reader);
+    let table = toml::from_str(&text)?;
+    mem::drop(text);
+
+    sbz_switch::set(logger, &table)
+}
+
+fn switch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let speakers = u32::from_str_radix(matches.value_of("speakers").unwrap(), 16).unwrap();
     let volume = matches.value_of("volume").map(|s| {
         f32::from_str(s).unwrap() / 100.0
     });
-    switch(logger, speakers, volume)
+    sbz_switch::switch(logger, speakers, volume)
 }
