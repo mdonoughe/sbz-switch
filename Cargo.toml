@@ -1,8 +1,8 @@
 [package]
 name = "sbz-switch"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Matthew Donoughe <mdonoughe@gmail.com>"]
-description = "Utility for switching Sound Blaster outputs on Windows"
+description = "Utility for changing Sound Blaster parameters on Windows"
 repository = "https://github.com/mdonoughe/sbz-switch/"
 readme = "README.md"
 keywords = ["windows", "sound"]
