@@ -9,6 +9,7 @@ use clap::{Arg, ArgMatches, App, SubCommand};
 
 use std::error::Error;
 use std::fs::File;
+use std::io;
 use std::io::BufReader;
 use std::io::prelude::*;
 use std::mem;
@@ -105,12 +106,12 @@ fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
 }
 
 fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
-    let name = matches.value_of("file").unwrap();
-    let file = File::open(name)?;
-    let mut reader = BufReader::new(file);
     let mut text = String::new();
-    reader.read_to_string(&mut text)?;
-    mem::drop(reader);
+    let name = matches.value_of("file").unwrap();
+    match name {
+        "-" => io::stdin().read_to_string(&mut text)?,
+        _ => BufReader::new(File::open(name)?).read_to_string(&mut text)?
+    };
     let table = toml::from_str(&text)?;
     mem::drop(text);
 
