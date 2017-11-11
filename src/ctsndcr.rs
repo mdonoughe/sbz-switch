@@ -4,6 +4,7 @@
 
 use winapi::GUID;
 
+#[allow(unknown_lints, unreadable_literal)]
 pub const IID_SOUND_CORE: GUID = GUID {
     Data1: 0x6111e7c4,
     Data2: 0x3ea4,

@@ -196,34 +196,34 @@ fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
 
     for (feature, parameter, value) in
         collate_set_values(matches.values_of("bool"), |s| {
-            bool::from_str(s).map(|b| Value::Boolean(b))
+            bool::from_str(s).map(Value::Boolean)
         })
     {
         creative_table
             .entry(feature.to_owned())
-            .or_insert_with(|| BTreeMap::<String, Value>::new())
+            .or_insert_with(BTreeMap::<String, Value>::new)
             .insert(parameter.to_owned(), value?);
     }
 
     for (feature, parameter, value) in
         collate_set_values(matches.values_of("float"), |s| {
-            f64::from_str(s).map(|f| Value::Float(f))
+            f64::from_str(s).map(Value::Float)
         })
     {
         creative_table
             .entry(feature.to_owned())
-            .or_insert_with(|| BTreeMap::<String, Value>::new())
+            .or_insert_with(BTreeMap::<String, Value>::new)
             .insert(parameter.to_owned(), value?);
     }
 
     for (feature, parameter, value) in
         collate_set_values(matches.values_of("int"), |s| {
-            i64::from_str(s).map(|i| Value::Integer(i))
+            i64::from_str(s).map(Value::Integer)
         })
     {
         creative_table
             .entry(feature.to_owned())
-            .or_insert_with(|| BTreeMap::<String, Value>::new())
+            .or_insert_with(BTreeMap::<String, Value>::new)
             .insert(parameter.to_owned(), value?);
     }
 

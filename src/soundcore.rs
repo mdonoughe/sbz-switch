@@ -104,10 +104,11 @@ impl<'a> Iterator for SoundCoreFeatureIterator<'a> {
                     let description_length = info.description
                         .iter()
                         .position(|i| *i == 0)
-                        .unwrap_or(info.description.len());
-                    let version_length = info.version.iter().position(|i| *i == 0).unwrap_or(
-                        info.version
-                            .len(),
+                        .unwrap_or_else(|| info.description.len());
+                    let version_length = info.version.iter().position(|i| *i == 0).unwrap_or_else(
+                        || {
+                            info.version.len()
+                        },
                     );
                     Some(SoundCoreFeature {
                         core: self.target,
@@ -191,23 +192,18 @@ impl<'a> SoundCoreParameter<'a> {
                 param: self.id,
             };
             let param_value = ParamValue {
-                kind: match value {
-                    &SoundCoreParamValue::Float(_) => 0,
-                    &SoundCoreParamValue::Bool(_) => 1,
-                    &SoundCoreParamValue::U32(_) => 2,
-                    &SoundCoreParamValue::I32(_) => 3,
+                kind: match *value {
+                    SoundCoreParamValue::Float(_) => 0,
+                    SoundCoreParamValue::Bool(_) => 1,
+                    SoundCoreParamValue::U32(_) => 2,
+                    SoundCoreParamValue::I32(_) => 3,
                     _ => panic!("tried to set parameter with nothing"),
                 },
-                value: match value {
-                    &SoundCoreParamValue::Float(f) => mem::transmute(f),
-                    &SoundCoreParamValue::Bool(b) => {
-                        match b {
-                            false => 0,
-                            true => 0xffffffff,
-                        }
-                    }
-                    &SoundCoreParamValue::U32(u) => u,
-                    &SoundCoreParamValue::I32(i) => mem::transmute(i),
+                value: match *value {
+                    SoundCoreParamValue::Float(f) => mem::transmute(f),
+                    SoundCoreParamValue::Bool(b) => if b { 0 } else { 0xffff_ffff },
+                    SoundCoreParamValue::U32(u) => u,
+                    SoundCoreParamValue::I32(i) => mem::transmute(i),
                     _ => panic!("tried to set parameter with nothing"),
                 },
             };
@@ -234,7 +230,7 @@ pub struct SoundCoreParameterIterator<'a> {
 fn convert_param_value(value: &ParamValue) -> SoundCoreParamValue {
     unsafe {
         match value.kind {
-            0 => SoundCoreParamValue::Float(mem::transmute(value.value)),
+            0 => SoundCoreParamValue::Float(f32::from_bits(value.value)),
             1 => SoundCoreParamValue::Bool(value.value != 0),
             2 => SoundCoreParamValue::U32(value.value),
             3 => SoundCoreParamValue::I32(mem::transmute(value.value)),
@@ -277,7 +273,7 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
                     let description_length = info.description
                         .iter()
                         .position(|i| *i == 0)
-                        .unwrap_or(info.description.len());
+                        .unwrap_or_else(|| info.description.len());
                     Some(SoundCoreParameter {
                         core: self.target,
                         context: self.context,

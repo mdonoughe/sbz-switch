@@ -17,7 +17,7 @@ use soundcore::SoundCoreError;
 use winapiext::{IAudioEndpointVolume, IID_AUDIO_ENDPOINT_VOLUME, IPropertyStore, PROPERTYKEY,
                 PROPVARIANT, STGM_READ};
 
-fn get_device_enumerator<'a>(logger: &'a Logger) -> Result<DeviceEnumerator<'a>, Win32Error> {
+fn get_device_enumerator(logger: &Logger) -> Result<DeviceEnumerator, Win32Error> {
     unsafe {
         let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
         trace!(logger, "Creating DeviceEnumerator...");
@@ -115,6 +115,7 @@ impl<'a> Endpoint<'a> {
         }
     }
     pub fn clsid(&self) -> Result<GUID, SoundCoreError> {
+        #[allow(unknown_lints, unreadable_literal)]
         const KEY_SOUNDCORECTL_CLSID: PROPERTYKEY = PROPERTYKEY {
             fmtid: GUID {
                 Data1: 0xc949c6aa,
@@ -125,7 +126,7 @@ impl<'a> Endpoint<'a> {
             pid: 0,
         };
         unsafe {
-            let property_result = self.property_store()?.get_value(KEY_SOUNDCORECTL_CLSID);
+            let property_result = self.property_store()?.get_value(&KEY_SOUNDCORECTL_CLSID);
             match property_result {
                 Err(ref err) if err.code == NTE_NOT_FOUND => {
                     return Err(SoundCoreError::NotSupported)
@@ -200,16 +201,16 @@ impl<'a> Drop for PropertyStore<'a> {
 }
 
 impl<'a> PropertyStore<'a> {
-    fn get_value(&self, key: PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
+    fn get_value(&self, key: &PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
         unsafe {
             let mut property_value = mem::uninitialized();
-            check((*self.0).GetValue(&key, &mut property_value))?;
+            check((*self.0).GetValue(key, &mut property_value))?;
             Ok(property_value)
         }
     }
 }
 
-pub fn get_default_endpoint<'a>(logger: &'a Logger) -> Result<Endpoint<'a>, Win32Error> {
+pub fn get_default_endpoint(logger: &Logger) -> Result<Endpoint, Win32Error> {
     get_device_enumerator(logger)?.get_default_audio_endpoint()
 }
 

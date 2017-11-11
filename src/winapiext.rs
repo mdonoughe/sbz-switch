@@ -45,11 +45,12 @@ pub struct PROPERTYKEY {
     pub pid: DWORD,
 }
 pub type REFPROPERTYKEY = *const PROPERTYKEY;
-pub const STGM_READ: DWORD = 0x00000000;
-pub const STGM_WRITE: DWORD = 0x00000001;
-pub const STGM_READWRITE: DWORD = 0x00000002;
+pub const STGM_READ: DWORD = 0x0;
+pub const STGM_WRITE: DWORD = 0x1;
+pub const STGM_READWRITE: DWORD = 0x2;
 
-// This wa missing from winapi.
+// This is missing from winapi.
+#[allow(unknown_lints, unreadable_literal)]
 pub const IID_AUDIO_ENDPOINT_VOLUME: GUID = GUID {
     Data1: 0x5cdf2c82,
     Data2: 0x841e,

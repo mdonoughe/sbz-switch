@@ -42,12 +42,12 @@ pub struct Configuration {
     pub creative: Option<BTreeMap<String, BTreeMap<String, Value>>>,
 }
 
-fn convert_from_soundcore(value: SoundCoreParamValue) -> Value {
-    match value {
-        SoundCoreParamValue::Float(f) => Value::Float(f as f64),
+fn convert_from_soundcore(value: &SoundCoreParamValue) -> Value {
+    match *value {
+        SoundCoreParamValue::Float(f) => Value::Float(f64::from(f)),
         SoundCoreParamValue::Bool(b) => Value::Boolean(b),
-        SoundCoreParamValue::U32(u) => Value::Integer(u as i64),
-        SoundCoreParamValue::I32(i) => Value::Integer(i as i64),
+        SoundCoreParamValue::U32(u) => Value::Integer(i64::from(u)),
+        SoundCoreParamValue::I32(i) => Value::Integer(i64::from(i)),
         _ => Value::String("unexpectedly got an unsupported type".to_owned()),
     }
 }
@@ -60,7 +60,7 @@ pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
     let mut endpoint_output = Table::new();
     endpoint_output.insert(
         "volume".to_owned(),
-        Value::Float(endpoint.get_volume()? as f64),
+        Value::Float(f64::from(endpoint.get_volume()?)),
     );
     output.insert("endpoint".to_owned(), Value::Table(endpoint_output));
 
@@ -82,7 +82,7 @@ pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
         clsid.Data4[6],
         clsid.Data4[7]
     );
-    let core = get_sound_core(&clsid, &id, &logger)?;
+    let core = get_sound_core(&clsid, &id, logger)?;
 
     let mut context_output = Table::new();
     for feature in core.features(0) {
@@ -99,7 +99,7 @@ pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
                 1 => {
                     let value = parameter.get();
                     debug!(logger, "    value:      {:?}", value);
-                    feature_output.insert(parameter.description, convert_from_soundcore(value));
+                    feature_output.insert(parameter.description, convert_from_soundcore(&value));
                 }
                 0 | 2 | 3 => {
                     let value = parameter.get();
@@ -107,7 +107,7 @@ pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
                     debug!(logger, "    maximum:    {:?}", parameter.max_value);
                     debug!(logger, "    step:       {:?}", parameter.step_size);
                     debug!(logger, "    value:      {:?}", value);
-                    feature_output.insert(parameter.description, convert_from_soundcore(value));
+                    feature_output.insert(parameter.description, convert_from_soundcore(&value));
                 }
                 5 => {}
                 _ => {
@@ -187,11 +187,11 @@ fn convert_to_soundcore(
                 3 => "int",
                 _ => "<unsupported>",
             }.to_owned(),
-            actual: match value {
-                &Value::Float(_) => "float",
-                &Value::Boolean(_) => "bool",
-                &Value::Integer(i) if i < 0 => "int",
-                &Value::Integer(_) => "int|uint",
+            actual: match *value {
+                Value::Float(_) => "float",
+                Value::Boolean(_) => "bool",
+                Value::Integer(i) if i < 0 => "int",
+                Value::Integer(_) => "int|uint",
                 _ => "<unsupported>",
             }.to_owned(),
         }),
@@ -223,7 +223,7 @@ fn set_internal(
             clsid.Data4[6],
             clsid.Data4[7]
         );
-        let core = get_sound_core(&clsid, &id, &logger)?;
+        let core = get_sound_core(&clsid, &id, logger)?;
 
         let mut unhandled_feature_names = BTreeSet::<&str>::new();
         for (key, _) in creative.iter() {
@@ -232,7 +232,7 @@ fn set_internal(
 
         for feature in core.features(0) {
             trace!(logger, "Looking for {} settings...", feature.description);
-            if let Some(ref feature_table) = creative.get(&feature.description) {
+            if let Some(feature_table) = creative.get(&feature.description) {
                 unhandled_feature_names.remove(&feature.description[..]);
                 let mut unhandled_parameter_names = BTreeSet::<&str>::new();
                 for (key, _) in feature_table.iter() {
