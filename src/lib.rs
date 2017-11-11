@@ -1,6 +1,8 @@
 extern crate ole32;
 extern crate regex;
 #[macro_use]
+extern crate serde_derive;
+#[macro_use]
 extern crate slog;
 extern crate toml;
 #[macro_use]
@@ -13,6 +15,7 @@ mod media;
 mod soundcore;
 mod winapiext;
 
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
@@ -27,6 +30,17 @@ use soundcore::{get_sound_core, SoundCoreFeature, SoundCoreParameter, SoundCoreP
 pub use com::{initialize_com, uninitialize_com};
 pub use hresult::{Win32Error, check};
 pub use soundcore::SoundCoreError;
+
+#[derive(Debug, Deserialize)]
+pub struct EndpointConfiguration {
+    pub volume: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Configuration {
+    pub endpoint: Option<EndpointConfiguration>,
+    pub creative: Option<BTreeMap<String, BTreeMap<String, Value>>>,
+}
 
 fn convert_from_soundcore(value: SoundCoreParamValue) -> Value {
     match value {
@@ -109,14 +123,14 @@ pub fn dump(
 
 pub fn set(
     logger: &Logger,
-    table: &Table,
+    configuration: &Configuration,
 ) -> Result<(), Box<Error>> {
     let endpoint = get_default_endpoint(logger)?;
     let premuted = endpoint.get_mute()?;
     if !premuted {
         endpoint.set_mute(true)?;
     }
-    let result = set_internal(logger, table, &endpoint);
+    let result = set_internal(logger, configuration, &endpoint);
     if !premuted {
         endpoint.set_mute(false)?;
     }
@@ -181,10 +195,10 @@ fn convert_to_soundcore(
 
 fn set_internal(
     logger: &Logger,
-    table: &Table,
+    configuration: &Configuration,
     endpoint: &Endpoint,
 ) -> Result<(), Box<Error>> {
-    if let Some(&Value::Table(ref creative)) = table.get("creative") {
+    if let Some(ref creative) = configuration.creative {
         let id = endpoint.id()?;
         debug!(logger, "Found device {}", id);
         let clsid = endpoint.clsid()?;
@@ -212,7 +226,7 @@ fn set_internal(
 
         for feature in core.features(0) {
             trace!(logger, "Looking for {} settings...", feature.description);
-            if let Some(&Value::Table(ref feature_table)) = creative.get(&feature.description) {
+            if let Some(ref feature_table) = creative.get(&feature.description) {
                 unhandled_feature_names.remove(&feature.description[..]);
                 let mut unhandled_parameter_names = BTreeSet::<&str>::new();
                 for (key, _) in feature_table.iter() {
@@ -235,52 +249,10 @@ fn set_internal(
             warn!(logger, "Could not find feature {}", unhandled);
         }
     }
-    if let Some(&Value::Table(ref endpoint_table)) = table.get("endpoint") {
-        if let Some(&Value::Float(v)) = endpoint_table.get("volume") {
-            endpoint.set_volume(v as f32)?;
+    if let Some(ref endpoint_config) = configuration.endpoint {
+        if let Some(v) = endpoint_config.volume {
+            endpoint.set_volume(v)?;
         }
     }
-    Ok(())
-}
-
-pub fn switch(
-    logger: &Logger,
-    speakers: u32,
-    volume: Option<f32>,
-) -> Result<(), Box<Error>> {
-    let endpoint = get_default_endpoint(logger)?;
-
-    let id = endpoint.id()?;
-    debug!(logger, "Found device {}", id);
-    let clsid = endpoint.clsid()?;
-    debug!(
-        logger,
-        "Found clsid {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
-        clsid.Data1,
-        clsid.Data2,
-        clsid.Data3,
-        clsid.Data4[0],
-        clsid.Data4[1],
-        clsid.Data4[2],
-        clsid.Data4[3],
-        clsid.Data4[4],
-        clsid.Data4[5],
-        clsid.Data4[6],
-        clsid.Data4[7]
-    );
-    let core = get_sound_core(&clsid, &id, &logger)?;
-
-    let premuted = endpoint.get_mute()?;
-    if !premuted {
-        endpoint.set_mute(true)?;
-    }
-    core.set_speakers(speakers);
-    if volume.is_some() {
-        endpoint.set_volume(volume.unwrap())?;
-    }
-    if !premuted {
-        endpoint.set_mute(false)?;
-    }
-
     Ok(())
 }

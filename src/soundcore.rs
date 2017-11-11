@@ -59,12 +59,12 @@ pub struct SoundCoreFeature<'a> {
 }
 
 impl<'a> SoundCoreFeature<'a> {
-    pub fn parameters(&self) -> SoundCoreParameterIterator<'a> {
+    pub fn parameters(&'a self) -> SoundCoreParameterIterator<'a> {
         SoundCoreParameterIterator {
             target: self.core,
             logger: self.logger,
             context: self.context,
-            feature: self.id,
+            feature: self,
             index: 0,
         }
     }
@@ -125,7 +125,7 @@ pub struct SoundCoreParameter<'a> {
     core: *mut ISoundCore,
     logger: &'a Logger,
     context: u32,
-    feature: u32,
+    feature: &'a SoundCoreFeature<'a>,
     pub id: u32,
     pub kind: u32,
     pub size: Option<u32>,
@@ -145,13 +145,13 @@ impl<'a> SoundCoreParameter<'a> {
         unsafe {
             let param = Param {
                 context: self.context,
-                feature: self.feature,
+                feature: self.feature.id,
                 param: self.id,
             };
             let mut value: ParamValue = mem::uninitialized();
-            trace!(self.logger, "Fetching parameter value .{}.{}.{}...", self.context, self.feature, self.id);
+            trace!(self.logger, "Fetching parameter value .{}.{}.{}...", self.context, self.feature.id, self.id);
             (*self.core).GetParamValue(param, &mut value as *mut ParamValue);
-            trace!(self.logger, "Got parameter value .{}.{}.{} = {:?}", self.context, self.feature, self.id, value);
+            trace!(self.logger, "Got parameter value .{}.{}.{} = {:?}", self.context, self.feature.id, self.id, value);
             convert_param_value(&value)
         }
     }
@@ -159,7 +159,7 @@ impl<'a> SoundCoreParameter<'a> {
         unsafe {
             let param = Param {
                 context: self.context,
-                feature: self.feature,
+                feature: self.feature.id,
                 param: self.id,
             };
             let param_value = ParamValue {
@@ -178,7 +178,7 @@ impl<'a> SoundCoreParameter<'a> {
                     _ => panic!("tried to set parameter with nothing"),
                 }
             };
-            info!(self.logger, "Setting {} = {:?}", self.description, value);
+            info!(self.logger, "Setting {}.{} = {:?}", self.feature.description, self.description, value);
             (*self.core).SetParamValue(param, param_value);
         }
     }
@@ -188,7 +188,7 @@ pub struct SoundCoreParameterIterator<'a> {
     target: *mut ISoundCore,
     logger: &'a Logger,
     context: u32,
-    feature: u32,
+    feature: &'a SoundCoreFeature<'a>,
     index: u32,
 }
 
@@ -210,9 +210,9 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
     fn next(&mut self) -> Option<SoundCoreParameter<'a>> {
         unsafe {
             let mut info: ParamInfo = mem::zeroed();
-            trace!(self.logger, "Fetching parameter .{}.{}[{}]...", self.context, self.feature, self.index);
-            (*self.target).EnumParams(self.context, self.index, self.feature, &mut info as *mut ParamInfo);
-            trace!(self.logger, "Got parameter .{}.{}[{}] = {:?}", self.context, self.feature, self.index, info);
+            trace!(self.logger, "Fetching parameter .{}.{}[{}]...", self.context, self.feature.description, self.index);
+            (*self.target).EnumParams(self.context, self.index, self.feature.id, &mut info as *mut ParamInfo);
+            trace!(self.logger, "Got parameter .{}.{}[{}] = {:?}", self.context, self.feature.description, self.index, info);
             self.index += 1;
             match info.param.feature {
                 0 => None,
@@ -255,21 +255,6 @@ impl<'a> SoundCore<'a> {
             info: buffer,
         };
         unsafe { (*self.0).BindHardware(&info) }
-    }
-    pub fn set_speakers(&self, code: u32) {
-        info!(self.1, "Setting speaker configuration to {:x}...", code);
-        unsafe {
-            let param = Param {
-                context: 0,
-                feature: 0x1000002,
-                param: 0,
-            };
-            let value = ParamValue {
-                kind: 2,
-                value: code,
-            };
-            (*self.0).SetParamValue(param, value)
-        }
     }
     pub fn features(&self, context: u32) -> SoundCoreFeatureIterator<'a> {
         SoundCoreFeatureIterator {

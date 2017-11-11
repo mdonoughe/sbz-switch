@@ -5,8 +5,9 @@ extern crate sloggers;
 extern crate sbz_switch;
 extern crate toml;
 
-use clap::{Arg, ArgMatches, App, SubCommand};
+use clap::{Arg, ArgMatches, App, AppSettings, SubCommand};
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs::File;
 use std::io;
@@ -20,13 +21,16 @@ use sloggers::Build;
 use sloggers::terminal::{TerminalLoggerBuilder, Destination};
 use sloggers::types::Severity;
 
-use sbz_switch::{initialize_com, uninitialize_com};
+use toml::value::Value;
+
+use sbz_switch::{Configuration, EndpointConfiguration, initialize_com, uninitialize_com};
 
 fn main() {
     let matches = App::new("sbz-switch")
         .version("0.1")
         .about("Switches outputs on Creative Sound Blaster devices")
         .author("Matthew Donoughe <mdonoughe@gmail.com>")
+        .setting(AppSettings::AllowNegativeNumbers)
         .subcommand(SubCommand::with_name("dump")
             .about("prints out the current configuration")
             .arg(Arg::with_name("output")
@@ -35,32 +39,42 @@ fn main() {
                 .value_name("FILE")
                 .help("Saves the current settings to a file")
                 .takes_value(true)))
-        .subcommand(SubCommand::with_name("set")
-            .about("sets the current configuration")
+        .subcommand(SubCommand::with_name("apply")
+            .about("applies a saved configuration")
             .arg(Arg::with_name("file")
                 .short("f")
                 .value_name("FILE")
-                .help("File containing the settings to apply")
-                .takes_value(true)
-                .required(true)))
-        .subcommand(SubCommand::with_name("switch")
-            .arg(
-                Arg::with_name("speakers")
-                    .short("s")
-                    .long("speakers")
-                    .value_name("CONFIG")
-                    .help("\"3003\" for stereo speakers, \"80000000\" for headphones.")
+                .help("Reads the settings from a file instead of stdin")
+                .takes_value(true)))
+        .subcommand(SubCommand::with_name("set")
+            .about("sets specific parameters")
+            .arg(Arg::with_name("bool")
+                    .short("b")
+                    .help("Sets a boolean value")
                     .takes_value(true)
-                    .required(true),
-            )
-            .arg(
-                Arg::with_name("volume")
+                    .multiple(true)
+                    .number_of_values(3)
+                    .value_names(&["FEATURE", "PARAMETER", "true|false"]))
+            .arg(Arg::with_name("int")
+                    .short("i")
+                    .help("Sets an integer value")
+                    .takes_value(true)
+                    .multiple(true)
+                    .number_of_values(3)
+                    .value_names(&["FEATURE", "PARAMETER", "VALUE"]))
+            .arg(Arg::with_name("float")
+                    .short("f")
+                    .help("Sets a floating-point value")
+                    .takes_value(true)
+                    .multiple(true)
+                    .number_of_values(3)
+                    .value_names(&["FEATURE", "PARAMETER", "VALUE"]))
+            .arg(Arg::with_name("volume")
                     .short("v")
                     .long("volume")
                     .value_name("VOLUME")
-                    .help("The target volume level, in percent")
-                    .takes_value(true),
-            ))
+                    .help("Sets the volume, in percent")
+                    .takes_value(true)))
         .get_matches();
 
     if matches.subcommand_name().is_none() {
@@ -79,8 +93,8 @@ fn main() {
 
     let result = match matches.subcommand() {
         ("dump", Some(sub_m)) => dump(&logger, sub_m),
+        ("apply", Some(sub_m)) => apply(&logger, sub_m),
         ("set", Some(sub_m)) => set(&logger, sub_m),
-        ("switch", Some(sub_m)) => switch(&logger, sub_m),
         _ => Ok(())
     };
 
@@ -105,23 +119,86 @@ fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     Ok(())
 }
 
-fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let mut text = String::new();
-    let name = matches.value_of("file").unwrap();
-    match name {
-        "-" => io::stdin().read_to_string(&mut text)?,
-        _ => BufReader::new(File::open(name)?).read_to_string(&mut text)?
+    match matches.value_of("file") {
+        Some(name) => BufReader::new(File::open(name)?).read_to_string(&mut text)?,
+        None => io::stdin().read_to_string(&mut text)?,
     };
-    let table = toml::from_str(&text)?;
+    let configuration: Configuration = toml::from_str(&text)?;
     mem::drop(text);
 
-    sbz_switch::set(logger, &table)
+    sbz_switch::set(logger, &configuration)
 }
 
-fn switch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
-    let speakers = u32::from_str_radix(matches.value_of("speakers").unwrap(), 16).unwrap();
-    let volume = matches.value_of("volume").map(|s| {
-        f32::from_str(s).unwrap() / 100.0
-    });
-    sbz_switch::switch(logger, speakers, volume)
+struct Collator<I, F> {
+    iter: Option<I>,
+    f: F,
+}
+
+impl<B, I: Iterator, F> Iterator for Collator<I, F> where F: FnMut(I::Item) -> B {
+    type Item = (I::Item, I::Item, B);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter {
+            Some(ref mut iter) => match iter.next() {
+                Some(value) => {
+                    let first = value;
+                    let second = iter.next().unwrap();
+                    let third = iter.next().unwrap();
+                    let f = &mut self.f;
+                    Some((first, second, f(third)))
+                },
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self.iter {
+            Some(ref iter) => match iter.size_hint() {
+                (l, Some(u)) => (l / 3, Some(u / 3)),
+                (l, None) => (l / 3, None),
+            },
+            None => (0, Some(0))
+        }
+    }
+}
+
+fn collate_set_values<I, F>(iter: Option<I>, f: F) -> Collator<I, F> {
+    Collator {
+        iter: iter,
+        f: f,
+    }
+}
+
+fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+    let mut creative_table = BTreeMap::<String, BTreeMap<String, Value>>::new();
+
+    for (feature, parameter, value) in collate_set_values(matches.values_of("bool"), |s| bool::from_str(s).map(|b| Value::Boolean(b))) {
+        creative_table.entry(feature.to_owned())
+            .or_insert_with(|| BTreeMap::<String, Value>::new())
+            .insert(parameter.to_owned(), value?);
+    }
+
+    for (feature, parameter, value) in collate_set_values(matches.values_of("float"), |s| f64::from_str(s).map(|f| Value::Float(f))) {
+        creative_table.entry(feature.to_owned())
+            .or_insert_with(|| BTreeMap::<String, Value>::new())
+            .insert(parameter.to_owned(), value?);
+    }
+
+    for (feature, parameter, value) in collate_set_values(matches.values_of("int"), |s| i64::from_str(s).map(|i| Value::Integer(i))) {
+        creative_table.entry(feature.to_owned())
+            .or_insert_with(|| BTreeMap::<String, Value>::new())
+            .insert(parameter.to_owned(), value?);
+    }
+
+    let configuration = Configuration {
+        endpoint: Some(EndpointConfiguration {
+            volume: matches.value_of("volume").map(|s| f32::from_str(s).unwrap() / 100.0),
+        }),
+        creative: Some(creative_table)
+    };
+    sbz_switch::set(logger, &configuration)
 }

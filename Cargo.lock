@@ -5,6 +5,8 @@ dependencies = [
  "clap 2.27.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ole32-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "slog 2.0.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "sloggers 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
