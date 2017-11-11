@@ -201,7 +201,7 @@ impl<'a> SoundCoreParameter<'a> {
                 },
                 value: match *value {
                     SoundCoreParamValue::Float(f) => mem::transmute(f),
-                    SoundCoreParamValue::Bool(b) => if b { 0 } else { 0xffff_ffff },
+                    SoundCoreParamValue::Bool(b) => if b { 0xffff_ffff } else { 0 },
                     SoundCoreParamValue::U32(u) => u,
                     SoundCoreParamValue::I32(i) => mem::transmute(i),
                     _ => panic!("tried to set parameter with nothing"),
