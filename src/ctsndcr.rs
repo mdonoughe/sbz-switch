@@ -106,7 +106,7 @@ pub struct ContextInfo {
 pub struct FeatureInfo {
     pub feature_id: u32,
     pub description: [u8; 32],
-    pub version: [u8; 16]
+    pub version: [u8; 16],
 }
 
 #[repr(C)]
@@ -120,5 +120,5 @@ pub struct ParamInfo {
     pub step_size: ParamValue,
     pub default_value: ParamValue,
     pub param_attributes: u32,
-    pub description: [u8; 32]
+    pub description: [u8; 32],
 }

@@ -52,15 +52,16 @@ fn convert_from_soundcore(value: SoundCoreParamValue) -> Value {
     }
 }
 
-pub fn dump(
-    logger: &Logger,
-) -> Result<Table, Box<Error>> {
+pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
     let mut output = Table::new();
 
     let endpoint = get_default_endpoint(logger)?;
 
     let mut endpoint_output = Table::new();
-    endpoint_output.insert("volume".to_owned(), Value::Float(endpoint.get_volume()? as f64));
+    endpoint_output.insert(
+        "volume".to_owned(),
+        Value::Float(endpoint.get_volume()? as f64),
+    );
     output.insert("endpoint".to_owned(), Value::Table(endpoint_output));
 
     let id = endpoint.id()?;
@@ -99,7 +100,7 @@ pub fn dump(
                     let value = parameter.get();
                     debug!(logger, "    value:      {:?}", value);
                     feature_output.insert(parameter.description, convert_from_soundcore(value));
-                },
+                }
                 0 | 2 | 3 => {
                     let value = parameter.get();
                     debug!(logger, "    minimum:    {:?}", parameter.min_value);
@@ -107,11 +108,11 @@ pub fn dump(
                     debug!(logger, "    step:       {:?}", parameter.step_size);
                     debug!(logger, "    value:      {:?}", value);
                     feature_output.insert(parameter.description, convert_from_soundcore(value));
-                },
-                5 => {},
+                }
+                5 => {}
                 _ => {
                     debug!(logger, "     kind:      {}", parameter.kind);
-                },
+                }
             }
         }
         context_output.insert(feature.description, Value::Table(feature_output));
@@ -121,10 +122,7 @@ pub fn dump(
     Ok(output)
 }
 
-pub fn set(
-    logger: &Logger,
-    configuration: &Configuration,
-) -> Result<(), Box<Error>> {
+pub fn set(logger: &Logger, configuration: &Configuration) -> Result<(), Box<Error>> {
     let endpoint = get_default_endpoint(logger)?;
     let premuted = endpoint.get_mute()?;
     if !premuted {
@@ -148,7 +146,14 @@ struct UnsupportedValueError {
 
 impl fmt::Display for UnsupportedValueError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Unsupported value for {}.{}. Expected {}, got {}.", self.feature, self.parameter, self.expected, self.actual)
+        write!(
+            f,
+            "Unsupported value for {}.{}. Expected {}, got {}.",
+            self.feature,
+            self.parameter,
+            self.expected,
+            self.actual
+        )
     }
 }
 
@@ -165,7 +170,7 @@ impl Error for UnsupportedValueError {
 fn convert_to_soundcore(
     feature: &SoundCoreFeature,
     parameter: &SoundCoreParameter,
-    value: &Value
+    value: &Value,
 ) -> Result<SoundCoreParamValue, UnsupportedValueError> {
     match (value, parameter.kind) {
         (&Value::Float(f), 0) => Ok(SoundCoreParamValue::Float(f as f32)),
@@ -180,14 +185,14 @@ fn convert_to_soundcore(
                 1 => "bool",
                 2 => "uint",
                 3 => "int",
-                _ => "<unsupported>"
+                _ => "<unsupported>",
             }.to_owned(),
             actual: match value {
                 &Value::Float(_) => "float",
                 &Value::Boolean(_) => "bool",
                 &Value::Integer(i) if i < 0 => "int",
                 &Value::Integer(_) => "int|uint",
-                _ => "<unsupported>"
+                _ => "<unsupported>",
             }.to_owned(),
         }),
     }
@@ -204,7 +209,8 @@ fn set_internal(
         let clsid = endpoint.clsid()?;
         debug!(
             logger,
-            "Found clsid {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
+            "Found clsid \
+            {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
             clsid.Data1,
             clsid.Data2,
             clsid.Data3,
@@ -234,14 +240,24 @@ fn set_internal(
                 }
 
                 for parameter in feature.parameters() {
-                    trace!(logger, "Looking for {}.{} settings...", feature.description, parameter.description);
+                    trace!(
+                        logger,
+                        "Looking for {}.{} settings...",
+                        feature.description,
+                        parameter.description
+                    );
                     if let Some(value) = feature_table.get(&parameter.description) {
                         unhandled_parameter_names.remove(&parameter.description[..]);
                         parameter.set(&convert_to_soundcore(&feature, &parameter, value)?);
                     }
                 }
                 for unhandled in unhandled_parameter_names {
-                    warn!(logger, "Could not find parameter {}.{}", feature.description, unhandled);
+                    warn!(
+                        logger,
+                        "Could not find parameter {}.{}",
+                        feature.description,
+                        unhandled
+                    );
                 }
             }
         }

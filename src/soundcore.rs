@@ -83,9 +83,20 @@ impl<'a> Iterator for SoundCoreFeatureIterator<'a> {
     fn next(&mut self) -> Option<SoundCoreFeature<'a>> {
         unsafe {
             let mut info: FeatureInfo = mem::zeroed();
-            trace!(self.logger, "Fetching feature .{}[{}]...", self.context, self.index);
+            trace!(
+                self.logger,
+                "Fetching feature .{}[{}]...",
+                self.context,
+                self.index
+            );
             (*self.target).EnumFeatures(self.context, self.index, &mut info as *mut FeatureInfo);
-            trace!(self.logger, "Got feature .{}[{}] = {:?}", self.context, self.index, info);
+            trace!(
+                self.logger,
+                "Got feature .{}[{}] = {:?}",
+                self.context,
+                self.index,
+                info
+            );
             self.index += 1;
             match info.feature_id {
                 0 => None,
@@ -94,19 +105,23 @@ impl<'a> Iterator for SoundCoreFeatureIterator<'a> {
                         .iter()
                         .position(|i| *i == 0)
                         .unwrap_or(info.description.len());
-                    let version_length = info.version
-                        .iter()
-                        .position(|i| *i == 0)
-                        .unwrap_or(info.version.len());
+                    let version_length = info.version.iter().position(|i| *i == 0).unwrap_or(
+                        info.version
+                            .len(),
+                    );
                     Some(SoundCoreFeature {
                         core: self.target,
                         logger: self.logger,
                         context: self.context,
                         id: info.feature_id,
-                        description: str::from_utf8(&info.description[0..description_length]).unwrap().to_owned(),
-                        version: str::from_utf8(&info.version[0..version_length]).unwrap().to_owned(),
+                        description: str::from_utf8(&info.description[0..description_length])
+                            .unwrap()
+                            .to_owned(),
+                        version: str::from_utf8(&info.version[0..version_length])
+                            .unwrap()
+                            .to_owned(),
                     })
-                },
+                }
             }
         }
     }
@@ -149,9 +164,22 @@ impl<'a> SoundCoreParameter<'a> {
                 param: self.id,
             };
             let mut value: ParamValue = mem::uninitialized();
-            trace!(self.logger, "Fetching parameter value .{}.{}.{}...", self.context, self.feature.id, self.id);
+            trace!(
+                self.logger,
+                "Fetching parameter value .{}.{}.{}...",
+                self.context,
+                self.feature.id,
+                self.id
+            );
             (*self.core).GetParamValue(param, &mut value as *mut ParamValue);
-            trace!(self.logger, "Got parameter value .{}.{}.{} = {:?}", self.context, self.feature.id, self.id, value);
+            trace!(
+                self.logger,
+                "Got parameter value .{}.{}.{} = {:?}",
+                self.context,
+                self.feature.id,
+                self.id,
+                value
+            );
             convert_param_value(&value)
         }
     }
@@ -172,13 +200,24 @@ impl<'a> SoundCoreParameter<'a> {
                 },
                 value: match value {
                     &SoundCoreParamValue::Float(f) => mem::transmute(f),
-                    &SoundCoreParamValue::Bool(b) => match b { false => 0, true => 0xffffffff },
+                    &SoundCoreParamValue::Bool(b) => {
+                        match b {
+                            false => 0,
+                            true => 0xffffffff,
+                        }
+                    }
                     &SoundCoreParamValue::U32(u) => u,
                     &SoundCoreParamValue::I32(i) => mem::transmute(i),
                     _ => panic!("tried to set parameter with nothing"),
-                }
+                },
             };
-            info!(self.logger, "Setting {}.{} = {:?}", self.feature.description, self.description, value);
+            info!(
+                self.logger,
+                "Setting {}.{} = {:?}",
+                self.feature.description,
+                self.description,
+                value
+            );
             (*self.core).SetParamValue(param, param_value);
         }
     }
@@ -199,7 +238,7 @@ fn convert_param_value(value: &ParamValue) -> SoundCoreParamValue {
             1 => SoundCoreParamValue::Bool(value.value != 0),
             2 => SoundCoreParamValue::U32(value.value),
             3 => SoundCoreParamValue::I32(mem::transmute(value.value)),
-            _ => SoundCoreParamValue::None
+            _ => SoundCoreParamValue::None,
         }
     }
 }
@@ -210,9 +249,27 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
     fn next(&mut self) -> Option<SoundCoreParameter<'a>> {
         unsafe {
             let mut info: ParamInfo = mem::zeroed();
-            trace!(self.logger, "Fetching parameter .{}.{}[{}]...", self.context, self.feature.description, self.index);
-            (*self.target).EnumParams(self.context, self.index, self.feature.id, &mut info as *mut ParamInfo);
-            trace!(self.logger, "Got parameter .{}.{}[{}] = {:?}", self.context, self.feature.description, self.index, info);
+            trace!(
+                self.logger,
+                "Fetching parameter .{}.{}[{}]...",
+                self.context,
+                self.feature.description,
+                self.index
+            );
+            (*self.target).EnumParams(
+                self.context,
+                self.index,
+                self.feature.id,
+                &mut info as *mut ParamInfo,
+            );
+            trace!(
+                self.logger,
+                "Got parameter .{}.{}[{}] = {:?}",
+                self.context,
+                self.feature.description,
+                self.index,
+                info
+            );
             self.index += 1;
             match info.param.feature {
                 0 => None,
@@ -227,15 +284,20 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
                         feature: self.feature,
                         logger: self.logger,
                         id: info.param.param,
-                        description: str::from_utf8(&info.description[0..description_length]).unwrap().to_owned(),
+                        description: str::from_utf8(&info.description[0..description_length])
+                            .unwrap()
+                            .to_owned(),
                         attributes: info.param_attributes,
                         kind: info.param_type,
-                        size: match info.param_type { 5 => Some(info.data_size), _ => None },
+                        size: match info.param_type {
+                            5 => Some(info.data_size),
+                            _ => None,
+                        },
                         min_value: convert_param_value(&info.min_value),
                         max_value: convert_param_value(&info.max_value),
                         step_size: convert_param_value(&info.step_size),
                     })
-                },
+                }
             }
         }
     }

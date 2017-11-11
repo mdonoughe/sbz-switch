@@ -179,7 +179,7 @@ impl<'a> Endpoint<'a> {
             debug!(self.2, "Getting volume...");
             let mut volume: f32 = mem::uninitialized();
             check((*self.1).GetMasterVolumeLevelScalar(
-                &mut volume as *mut f32
+                &mut volume as *mut f32,
             ))?;
             debug!(self.2, "volume = {}", volume);
             Ok(volume)
