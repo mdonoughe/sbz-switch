@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate clap;
 #[macro_use]
 extern crate slog;
@@ -52,6 +53,14 @@ fn main() {
                         .value_name("FILE")
                         .help("Reads the settings from a file instead of stdin")
                         .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("mute")
+                        .short("m")
+                        .value_name("true|false")
+                        .default_value("true")
+                        .help("Temporarily mutes while changing parameters")
+                        .takes_value(true),
                 ),
         )
         .subcommand(
@@ -90,6 +99,14 @@ fn main() {
                         .long("volume")
                         .value_name("VOLUME")
                         .help("Sets the volume, in percent")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("mute")
+                        .short("m")
+                        .value_name("true|false")
+                        .default_value("true")
+                        .help("Temporarily mutes while changing parameters")
                         .takes_value(true),
                 ),
         )
@@ -142,7 +159,8 @@ fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let configuration: Configuration = toml::from_str(&text)?;
     mem::drop(text);
 
-    sbz_switch::set(logger, &configuration)
+    let mute = value_t!(matches, "mute", bool)?;
+    sbz_switch::set(logger, &configuration, mute)
 }
 
 struct Collator<I, F> {
@@ -235,5 +253,7 @@ fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
         }),
         creative: Some(creative_table),
     };
-    sbz_switch::set(logger, &configuration)
+
+    let mute = value_t!(matches, "mute", bool)?;
+    sbz_switch::set(logger, &configuration, mute)
 }

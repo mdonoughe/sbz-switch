@@ -1,6 +1,6 @@
 [package]
 name = "sbz-switch"
-version = "1.0.0"
+version = "1.1.0"
 authors = ["Matthew Donoughe <mdonoughe@gmail.com>"]
 description = "Utility for changing Sound Blaster parameters on Windows"
 repository = "https://github.com/mdonoughe/sbz-switch/"

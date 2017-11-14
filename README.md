@@ -20,9 +20,40 @@ This may have bugs. Use at your own risk, especially if you have configured your
 
 ## Usage
 
+```
+USAGE:
+    sbz-switch.exe [SUBCOMMAND]
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+SUBCOMMANDS:
+    apply    applies a saved configuration
+    dump     prints out the current configuration
+    help     Prints this message or the help of the given subcommand(s)
+    set      sets specific parameters
+```
+
 ### Set
 
 > Set a small number of parameters
+
+```
+USAGE:
+    sbz-switch.exe set [OPTIONS]
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -b <FEATURE> <PARAMETER> <true|false>        Sets a boolean value
+    -f <FEATURE> <PARAMETER> <VALUE>             Sets a floating-point value
+    -i <FEATURE> <PARAMETER> <VALUE>             Sets an integer value
+    -m <true|false>                              Temporarily mutes while changing parameters [default: true]
+    -v, --volume <VOLUME>                        Sets the volume, in percent
+```
 
 Switch to speakers at 60% volume with effects turned on:
 
@@ -36,6 +67,18 @@ Switch to headphones at 10% volume with effects turned off:
 
 > See or save the current parameters
 
+```
+USAGE:
+    sbz-switch.exe dump [OPTIONS]
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -o, --output <FILE>    Saves the current settings to a file
+```
+
 See the current settings:
 
     sbz-switch dump
@@ -47,6 +90,19 @@ Save the current settings to headphones.toml:
 ### Apply
 
 > Set many parameters at once
+
+```
+USAGE:
+    sbz-switch.exe apply [OPTIONS]
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -f <FILE>              Reads the settings from a file instead of stdin
+    -m <true|false>        Temporarily mutes while changing parameters [default: true]
+```
 
 Apply the previously saved headphones.toml file:
 

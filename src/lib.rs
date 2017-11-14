@@ -122,14 +122,14 @@ pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
     Ok(output)
 }
 
-pub fn set(logger: &Logger, configuration: &Configuration) -> Result<(), Box<Error>> {
+pub fn set(logger: &Logger, configuration: &Configuration, mute: bool) -> Result<(), Box<Error>> {
     let endpoint = get_default_endpoint(logger)?;
-    let premuted = endpoint.get_mute()?;
-    if !premuted {
+    let mute_unmute = mute && !endpoint.get_mute()?;
+    if mute_unmute {
         endpoint.set_mute(true)?;
     }
     let result = set_internal(logger, configuration, &endpoint);
-    if !premuted {
+    if mute_unmute {
         endpoint.set_mute(false)?;
     }
 
