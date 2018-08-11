@@ -13,21 +13,23 @@ mod hresult;
 mod lazy;
 mod media;
 mod soundcore;
+mod winapiext;
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fmt;
 
 use slog::Logger;
 
 use toml::value::{Table, Value};
 
-use media::{get_default_endpoint, Endpoint};
 use soundcore::{get_sound_core, SoundCoreFeature, SoundCoreParamValue, SoundCoreParameter};
 
 pub use com::{initialize_com, uninitialize_com};
 pub use hresult::{check, Win32Error};
+pub use media::{DeviceEnumerator, Endpoint};
 pub use soundcore::SoundCoreError;
 
 #[derive(Debug, Deserialize)]
@@ -51,10 +53,40 @@ fn convert_from_soundcore(value: &SoundCoreParamValue) -> Value {
     }
 }
 
-pub fn dump(logger: Logger) -> Result<Table, Box<Error>> {
+#[derive(Serialize)]
+pub struct DeviceInfo {
+    id: String,
+    interface: String,
+    description: String,
+}
+
+pub fn list_devices(logger: Logger) -> Result<Vec<DeviceInfo>, Box<Error>> {
+    let endpoints = DeviceEnumerator::with_logger(logger.clone())?.get_active_audio_endpoints()?;
+    let mut result = Vec::with_capacity(endpoints.len());
+    for endpoint in endpoints {
+        let id = endpoint.id()?;
+        debug!(logger, "Querying endpoint {}...", id);
+        result.push(DeviceInfo {
+            id,
+            interface: endpoint.interface()?,
+            description: endpoint.description()?,
+        })
+    }
+    Ok(result)
+}
+
+fn get_endpoint(logger: Logger, device_id: Option<&OsStr>) -> Result<Endpoint, Win32Error> {
+    let enumerator = DeviceEnumerator::with_logger(logger)?;
+    Ok(match device_id {
+        Some(id) => enumerator.get_endpoint(id)?,
+        None => enumerator.get_default_audio_endpoint()?,
+    })
+}
+
+pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Error>> {
     let mut output = Table::new();
 
-    let endpoint = get_default_endpoint(logger.clone())?;
+    let endpoint = get_endpoint(logger.clone(), device_id)?;
 
     let mut endpoint_output = Table::new();
     endpoint_output.insert(
@@ -121,8 +153,13 @@ pub fn dump(logger: Logger) -> Result<Table, Box<Error>> {
     Ok(output)
 }
 
-pub fn set(logger: Logger, configuration: &Configuration, mute: bool) -> Result<(), Box<Error>> {
-    let endpoint = get_default_endpoint(logger.clone())?;
+pub fn set(
+    logger: Logger,
+    device_id: Option<&OsStr>,
+    configuration: &Configuration,
+    mute: bool,
+) -> Result<(), Box<Error>> {
+    let endpoint = get_endpoint(logger.clone(), device_id)?;
     let mute_unmute = mute && !endpoint.get_mute()?;
     if mute_unmute {
         endpoint.set_mute(true)?;

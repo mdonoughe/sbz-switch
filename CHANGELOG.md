@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.0.0] - 2018-08-11
+### Added
+- It is now possible to specify a device ID, allowing Sound Blaster settings to change even when another device is marked as default. As a result, the API methods now have an additional parameter for providing the device ID.
+
 ## [1.1.0] - 2017-11-13
 ### Added
 - Muting can be disabled by passing `-m false`.
@@ -22,6 +26,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - Command to switch speaker configuration and adjust volume.
 
-[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v2.0.0...HEAD
+[1.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v0.1.0...v1.0.0

@@ -29,10 +29,11 @@ FLAGS:
     -V, --version    Prints version information
 
 SUBCOMMANDS:
-    apply    applies a saved configuration
-    dump     prints out the current configuration
-    help     Prints this message or the help of the given subcommand(s)
-    set      sets specific parameters
+    apply           applies a saved configuration
+    dump            prints out the current configuration
+    help            Prints this message or the help of the given subcommand(s)
+    list-devices    prints out the names and IDs of available devices
+    set             sets specific parameters
 ```
 
 ### Set
@@ -49,6 +50,7 @@ FLAGS:
 
 OPTIONS:
     -b <FEATURE> <PARAMETER> <true|false>        Sets a boolean value
+    -d, --device <DEVICE_ID>                     Specify the device to act on (get id from list-devices)
     -f <FEATURE> <PARAMETER> <VALUE>             Sets a floating-point value
     -i <FEATURE> <PARAMETER> <VALUE>             Sets an integer value
     -m <true|false>                              Temporarily mutes while changing parameters [default: true]
@@ -76,7 +78,8 @@ FLAGS:
     -V, --version    Prints version information
 
 OPTIONS:
-    -o, --output <FILE>    Saves the current settings to a file
+    -d, --device <DEVICE_ID>    Specify the device to act on (get id from list-devices)
+    -o, --output <FILE>         Saves the current settings to a file
 ```
 
 See the current settings:
@@ -100,8 +103,9 @@ FLAGS:
     -V, --version    Prints version information
 
 OPTIONS:
-    -f <FILE>              Reads the settings from a file instead of stdin
-    -m <true|false>        Temporarily mutes while changing parameters [default: true]
+    -d, --device <DEVICE_ID>    Specify the device to act on (get id from list-devices)
+    -f <FILE>                   Reads the settings from a file instead of stdin
+    -m <true|false>             Temporarily mutes while changing parameters [default: true]
 ```
 
 Apply the previously saved headphones.toml file:

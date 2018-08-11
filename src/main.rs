@@ -27,10 +27,20 @@ use toml::value::Value;
 use sbz_switch::{initialize_com, uninitialize_com, Configuration, EndpointConfiguration};
 
 fn main() {
+    let device_arg = Arg::with_name("device")
+        .short("d")
+        .long("device")
+        .value_name("DEVICE_ID")
+        .help("Specify the device to act on (get id from list-devices)");
     let matches = app_from_crate!()
         .setting(AppSettings::AllowNegativeNumbers)
         .subcommand(
+            SubCommand::with_name("list-devices")
+                .about("prints out the names and IDs of available devices"),
+        )
+        .subcommand(
             SubCommand::with_name("dump")
+                .arg(device_arg.clone())
                 .about("prints out the current configuration")
                 .arg(
                     Arg::with_name("output")
@@ -43,6 +53,7 @@ fn main() {
         .subcommand(
             SubCommand::with_name("apply")
                 .about("applies a saved configuration")
+                .arg(device_arg.clone())
                 .arg(
                     Arg::with_name("file")
                         .short("f")
@@ -60,6 +71,7 @@ fn main() {
         .subcommand(
             SubCommand::with_name("set")
                 .about("sets specific parameters")
+                .arg(device_arg.clone())
                 .arg(
                     Arg::with_name("bool")
                         .short("b")
@@ -116,6 +128,7 @@ fn main() {
     trace!(logger, "Initialized");
 
     let result = match matches.subcommand() {
+        ("list-devices", _) => list_devices(logger.clone()),
         ("dump", Some(sub_m)) => dump(logger.clone(), sub_m),
         ("apply", Some(sub_m)) => apply(logger.clone(), sub_m),
         ("set", Some(sub_m)) => set(logger.clone(), sub_m),
@@ -128,9 +141,16 @@ fn main() {
     debug!(logger, "Completed successfully");
 }
 
+fn list_devices(logger: Logger) -> Result<(), Box<Error>> {
+    let devices = sbz_switch::list_devices(logger)?;
+    let text = toml::to_string_pretty(&devices)?;
+    print!("{}", text);
+    Ok(())
+}
+
 fn dump(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
-    let table = sbz_switch::dump(logger)?;
-    let text = toml::to_string(&table)?;
+    let table = sbz_switch::dump(logger, matches.value_of_os("device"))?;
+    let text = toml::to_string_pretty(&table)?;
     let output = matches.value_of("output");
     match output {
         Some(name) => write!(File::create(name)?, "{}", text)?,
@@ -149,7 +169,7 @@ fn apply(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     mem::drop(text);
 
     let mute = value_t!(matches, "mute", bool)?;
-    sbz_switch::set(logger, &configuration, mute)
+    sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
 }
 
 struct Collator<I, F> {
@@ -234,5 +254,5 @@ fn set(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     };
 
     let mute = value_t!(matches, "mute", bool)?;
-    sbz_switch::set(logger, &configuration, mute)
+    sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
 }

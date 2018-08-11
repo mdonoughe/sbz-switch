@@ -1,8 +1,9 @@
 use std::error::Error;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::isize;
 use std::mem;
-use std::os::windows::ffi::OsStringExt;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr::{self, NonNull};
 use std::slice;
 
@@ -10,13 +11,14 @@ use regex::Regex;
 use slog::Logger;
 use winapi::shared::guiddef::GUID;
 use winapi::shared::winerror::NTE_NOT_FOUND;
-use winapi::shared::wtypes::PROPERTYKEY;
+use winapi::shared::wtypes::{PROPERTYKEY, VARTYPE};
 use winapi::um::combaseapi::CLSCTX_ALL;
 use winapi::um::combaseapi::{CoCreateInstance, CoTaskMemFree};
 use winapi::um::coml2api::STGM_READ;
 use winapi::um::endpointvolume::IAudioEndpointVolume;
 use winapi::um::mmdeviceapi::{
     eConsole, eRender, CLSID_MMDeviceEnumerator, IMMDevice, IMMDeviceEnumerator,
+    DEVICE_STATE_ACTIVE,
 };
 use winapi::um::propidl::PROPVARIANT;
 use winapi::um::propsys::IPropertyStore;
@@ -25,22 +27,7 @@ use winapi::Interface;
 use hresult::{check, Win32Error};
 use lazy::Lazy;
 use soundcore::{SoundCoreError, PKEY_SOUNDCORECTL_CLSID};
-
-fn get_device_enumerator(logger: Logger) -> Result<DeviceEnumerator, Win32Error> {
-    unsafe {
-        let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
-        trace!(logger, "Creating DeviceEnumerator...");
-        check(CoCreateInstance(
-            &CLSID_MMDeviceEnumerator,
-            ptr::null_mut(),
-            CLSCTX_ALL,
-            &IMMDeviceEnumerator::uuidof(),
-            &mut enumerator as *mut *mut IMMDeviceEnumerator as *mut _,
-        ))?;
-        trace!(logger, "Created DeviceEnumerator");
-        Ok(DeviceEnumerator(NonNull::new(enumerator).unwrap(), logger))
-    }
-}
+use winapiext::{PKEY_DeviceInterface_FriendlyName, PKEY_Device_DeviceDesc};
 
 fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
     let re1 = Regex::new(
@@ -144,34 +131,24 @@ impl Endpoint {
             .map_err(|e| e.clone())
     }
     pub fn clsid(&self) -> Result<GUID, SoundCoreError> {
-        #[allow(unknown_lints, unreadable_literal)]
-        unsafe {
-            let property_result = self.property_store()?.get_value(&PKEY_SOUNDCORECTL_CLSID);
-            match property_result {
-                Err(ref err) if err.code == NTE_NOT_FOUND => {
-                    return Err(SoundCoreError::NotSupported)
-                }
-                Err(err) => return Err(SoundCoreError::Win32(err)),
-                Ok(_) => {}
+        match self.property_store()?
+            .get_string_value(&PKEY_SOUNDCORECTL_CLSID)
+        {
+            Ok(str) => parse_guid(&str).or(Err(SoundCoreError::NotSupported)),
+            Err(GetPropertyError::UnexpectedType(_)) => Err(SoundCoreError::NotSupported),
+            Err(GetPropertyError::Win32(ref error)) if error.code == NTE_NOT_FOUND => {
+                Err(SoundCoreError::NotSupported)
             }
-            let property_value = property_result?;
-            trace!(
-                self.logger,
-                "Returned variant has type {}",
-                property_value.vt
-            );
-            // VT_LPWSTR
-            if property_value.vt != 31 {
-                return Err(SoundCoreError::NotSupported);
-            }
-            let chars = *(property_value.data.as_ptr() as *mut *mut u16);
-            let length = (0..isize::MAX).position(|i| *chars.offset(i) == 0).unwrap();
-            let str = OsString::from_wide(slice::from_raw_parts(chars, length))
-                .to_string_lossy()
-                .into_owned();
-            trace!(self.logger, "Returned variant has value {}", &str);
-            parse_guid(&str).or(Err(SoundCoreError::NotSupported))
+            Err(GetPropertyError::Win32(error)) => Err(SoundCoreError::Win32(error)),
         }
+    }
+    pub fn interface(&self) -> Result<String, GetPropertyError> {
+        self.property_store()?
+            .get_string_value(&PKEY_DeviceInterface_FriendlyName)
+    }
+    pub fn description(&self) -> Result<String, GetPropertyError> {
+        self.property_store()?
+            .get_string_value(&PKEY_Device_DeviceDesc)
     }
     fn volume(&self) -> Result<NonNull<IAudioEndpointVolume>, Win32Error> {
         self.volume
@@ -230,6 +207,38 @@ impl Endpoint {
     }
 }
 
+#[derive(Debug)]
+pub enum GetPropertyError {
+    Win32(Win32Error),
+    UnexpectedType(VARTYPE),
+}
+
+impl fmt::Display for GetPropertyError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            GetPropertyError::Win32(error) => error.fmt(f),
+            GetPropertyError::UnexpectedType(code) => {
+                write!(f, "returned property value was of unexpected type {}", code)
+            }
+        }
+    }
+}
+
+impl Error for GetPropertyError {
+    fn cause(&self) -> Option<&Error> {
+        match self {
+            GetPropertyError::Win32(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<Win32Error> for GetPropertyError {
+    fn from(error: Win32Error) -> Self {
+        GetPropertyError::Win32(error)
+    }
+}
+
 struct PropertyStore(NonNull<IPropertyStore>, Logger);
 
 impl Drop for PropertyStore {
@@ -245,21 +254,70 @@ impl Drop for PropertyStore {
 impl PropertyStore {
     fn get_value(&self, key: &PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
         unsafe {
+            trace!(self.1, "Getting property...");
             let mut property_value = mem::uninitialized();
             check(self.0.as_ref().GetValue(key, &mut property_value))?;
             Ok(property_value)
         }
     }
+    fn get_string_value(&self, key: &PROPERTYKEY) -> Result<String, GetPropertyError> {
+        unsafe {
+            let property_value = self.get_value(key)?;
+            trace!(self.1, "Returned variant has type {}", property_value.vt);
+            // VT_LPWSTR
+            if property_value.vt != 31 {
+                return Err(GetPropertyError::UnexpectedType(property_value.vt));
+            }
+            let chars = *(property_value.data.as_ptr() as *mut *mut u16);
+            let length = (0..isize::MAX).position(|i| *chars.offset(i) == 0).unwrap();
+            let str = OsString::from_wide(slice::from_raw_parts(chars, length))
+                .to_string_lossy()
+                .into_owned();
+            trace!(self.1, "Returned variant has value {}", &str);
+            Ok(str)
+        }
+    }
 }
 
-pub fn get_default_endpoint(logger: Logger) -> Result<Endpoint, Win32Error> {
-    get_device_enumerator(logger)?.get_default_audio_endpoint()
-}
-
-struct DeviceEnumerator(NonNull<IMMDeviceEnumerator>, Logger);
+pub struct DeviceEnumerator(NonNull<IMMDeviceEnumerator>, Logger);
 
 impl DeviceEnumerator {
-    fn get_default_audio_endpoint(&self) -> Result<Endpoint, Win32Error> {
+    pub fn with_logger(logger: Logger) -> Result<Self, Win32Error> {
+        unsafe {
+            let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
+            trace!(logger, "Creating DeviceEnumerator...");
+            check(CoCreateInstance(
+                &CLSID_MMDeviceEnumerator,
+                ptr::null_mut(),
+                CLSCTX_ALL,
+                &IMMDeviceEnumerator::uuidof(),
+                &mut enumerator as *mut *mut IMMDeviceEnumerator as *mut _,
+            ))?;
+            trace!(logger, "Created DeviceEnumerator");
+            Ok(DeviceEnumerator(NonNull::new(enumerator).unwrap(), logger))
+        }
+    }
+    pub fn get_active_audio_endpoints(&self) -> Result<Vec<Endpoint>, Win32Error> {
+        unsafe {
+            trace!(self.1, "Getting active endpoints...");
+            let mut collection = mem::uninitialized();
+            check(self.0.as_ref().EnumAudioEndpoints(
+                eRender,
+                DEVICE_STATE_ACTIVE,
+                &mut collection,
+            ))?;
+            let mut count = 0;
+            check((*collection).GetCount(&mut count))?;
+            let mut result = Vec::with_capacity(count as usize);
+            for i in 0..count {
+                let mut device = mem::uninitialized();
+                check((*collection).Item(i, &mut device))?;
+                result.push(Endpoint::new(NonNull::new(device).unwrap(), self.1.clone()))
+            }
+            Ok(result)
+        }
+    }
+    pub fn get_default_audio_endpoint(&self) -> Result<Endpoint, Win32Error> {
         unsafe {
             trace!(self.1, "Getting default endpoint...");
             let mut device = mem::uninitialized();
@@ -268,6 +326,15 @@ impl DeviceEnumerator {
                     .as_ref()
                     .GetDefaultAudioEndpoint(eRender, eConsole, &mut device),
             )?;
+            Ok(Endpoint::new(NonNull::new(device).unwrap(), self.1.clone()))
+        }
+    }
+    pub fn get_endpoint(&self, id: &OsStr) -> Result<Endpoint, Win32Error> {
+        trace!(self.1, "Getting endpoint...");
+        let buffer: Vec<_> = id.encode_wide().chain(Some(0)).collect();
+        unsafe {
+            let mut device = mem::uninitialized();
+            check(self.0.as_ref().GetDevice(buffer.as_ptr(), &mut device))?;
             Ok(Endpoint::new(NonNull::new(device).unwrap(), self.1.clone()))
         }
     }
