@@ -36,6 +36,19 @@ SUBCOMMANDS:
     set             sets specific parameters
 ```
 
+### List Devices
+
+> Find available audio devices
+
+```
+USAGE:
+    sbz-switch.exe list-devices
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+```
+
 ### Set
 
 > Set a small number of parameters
