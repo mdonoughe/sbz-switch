@@ -10,6 +10,7 @@ extern crate winapi;
 mod com;
 mod ctsndcr;
 mod hresult;
+mod lazy;
 mod media;
 mod soundcore;
 
@@ -50,10 +51,10 @@ fn convert_from_soundcore(value: &SoundCoreParamValue) -> Value {
     }
 }
 
-pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
+pub fn dump(logger: Logger) -> Result<Table, Box<Error>> {
     let mut output = Table::new();
 
-    let endpoint = get_default_endpoint(logger)?;
+    let endpoint = get_default_endpoint(logger.clone())?;
 
     let mut endpoint_output = Table::new();
     endpoint_output.insert(
@@ -80,7 +81,7 @@ pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
         clsid.Data4[6],
         clsid.Data4[7]
     );
-    let core = get_sound_core(&clsid, &id, logger)?;
+    let core = get_sound_core(&clsid, &id, logger.clone())?;
 
     let mut context_output = Table::new();
     for feature in core.features(0) {
@@ -120,8 +121,8 @@ pub fn dump(logger: &Logger) -> Result<Table, Box<Error>> {
     Ok(output)
 }
 
-pub fn set(logger: &Logger, configuration: &Configuration, mute: bool) -> Result<(), Box<Error>> {
-    let endpoint = get_default_endpoint(logger)?;
+pub fn set(logger: Logger, configuration: &Configuration, mute: bool) -> Result<(), Box<Error>> {
+    let endpoint = get_default_endpoint(logger.clone())?;
     let mute_unmute = mute && !endpoint.get_mute()?;
     if mute_unmute {
         endpoint.set_mute(true)?;
@@ -194,7 +195,7 @@ fn convert_to_soundcore(
 }
 
 fn set_internal(
-    logger: &Logger,
+    logger: Logger,
     configuration: &Configuration,
     endpoint: &Endpoint,
 ) -> Result<(), Box<Error>> {
@@ -218,7 +219,7 @@ fn set_internal(
             clsid.Data4[6],
             clsid.Data4[7]
         );
-        let core = get_sound_core(&clsid, &id, logger)?;
+        let core = get_sound_core(&clsid, &id, logger.clone())?;
 
         let mut unhandled_feature_names = BTreeSet::<&str>::new();
         for (key, _) in creative.iter() {

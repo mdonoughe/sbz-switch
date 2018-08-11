@@ -14,6 +14,10 @@ use winapi::Interface;
 use ctsndcr::{FeatureInfo, HardwareInfo, ISoundCore, Param, ParamInfo, ParamValue};
 use hresult::{check, Win32Error};
 
+DEFINE_PROPERTYKEY!{PKEY_SOUNDCORECTL_CLSID,
+0xc949c6aa, 0x132b, 0x4511,0xbb, 0x1b, 0x35, 0x26, 0x1a, 0x2a, 0x63, 0x33,
+0}
+
 #[derive(Debug)]
 pub enum SoundCoreError {
     Win32(Win32Error),
@@ -50,20 +54,20 @@ impl From<Win32Error> for SoundCoreError {
     }
 }
 
-pub struct SoundCoreFeature<'a> {
+pub struct SoundCoreFeature {
     core: *mut ISoundCore,
-    logger: &'a Logger,
+    logger: Logger,
     context: u32,
     pub id: u32,
     pub description: String,
     pub version: String,
 }
 
-impl<'a> SoundCoreFeature<'a> {
-    pub fn parameters(&'a self) -> SoundCoreParameterIterator<'a> {
+impl SoundCoreFeature {
+    pub fn parameters(&self) -> SoundCoreParameterIterator {
         SoundCoreParameterIterator {
             target: self.core,
-            logger: self.logger,
+            logger: self.logger.clone(),
             context: self.context,
             feature: self,
             index: 0,
@@ -71,17 +75,17 @@ impl<'a> SoundCoreFeature<'a> {
     }
 }
 
-pub struct SoundCoreFeatureIterator<'a> {
+pub struct SoundCoreFeatureIterator {
     target: *mut ISoundCore,
-    logger: &'a Logger,
+    logger: Logger,
     context: u32,
     index: u32,
 }
 
-impl<'a> Iterator for SoundCoreFeatureIterator<'a> {
-    type Item = SoundCoreFeature<'a>;
+impl Iterator for SoundCoreFeatureIterator {
+    type Item = SoundCoreFeature;
 
-    fn next(&mut self) -> Option<SoundCoreFeature<'a>> {
+    fn next(&mut self) -> Option<SoundCoreFeature> {
         unsafe {
             let mut info: FeatureInfo = mem::zeroed();
             trace!(
@@ -112,7 +116,7 @@ impl<'a> Iterator for SoundCoreFeatureIterator<'a> {
                         .unwrap_or_else(|| info.version.len());
                     Some(SoundCoreFeature {
                         core: self.target,
-                        logger: self.logger,
+                        logger: self.logger.clone(),
                         context: self.context,
                         id: info.feature_id,
                         description: str::from_utf8(&info.description[0..description_length])
@@ -139,9 +143,9 @@ pub enum SoundCoreParamValue {
 
 pub struct SoundCoreParameter<'a> {
     core: *mut ISoundCore,
-    logger: &'a Logger,
+    logger: Logger,
     context: u32,
-    feature: &'a SoundCoreFeature<'a>,
+    feature: &'a SoundCoreFeature,
     pub id: u32,
     pub kind: u32,
     pub size: Option<u32>,
@@ -222,9 +226,9 @@ impl<'a> SoundCoreParameter<'a> {
 
 pub struct SoundCoreParameterIterator<'a> {
     target: *mut ISoundCore,
-    logger: &'a Logger,
+    logger: Logger,
     context: u32,
-    feature: &'a SoundCoreFeature<'a>,
+    feature: &'a SoundCoreFeature,
     index: u32,
 }
 
@@ -279,7 +283,7 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
                         core: self.target,
                         context: self.context,
                         feature: self.feature,
-                        logger: self.logger,
+                        logger: self.logger.clone(),
                         id: info.param.param,
                         description: str::from_utf8(&info.description[0..description_length])
                             .unwrap()
@@ -300,9 +304,9 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
     }
 }
 
-pub struct SoundCore<'a>(*mut ISoundCore, &'a Logger);
+pub struct SoundCore(*mut ISoundCore, Logger);
 
-impl<'a> SoundCore<'a> {
+impl SoundCore {
     fn bind_hardware(&self, id: &str) {
         trace!(self.1, "Binding SoundCore to {}...", id);
         let mut buffer = [0; 260];
@@ -315,17 +319,17 @@ impl<'a> SoundCore<'a> {
         };
         unsafe { (*self.0).BindHardware(&info) }
     }
-    pub fn features(&self, context: u32) -> SoundCoreFeatureIterator<'a> {
+    pub fn features(&self, context: u32) -> SoundCoreFeatureIterator {
         SoundCoreFeatureIterator {
             target: self.0,
-            logger: self.1,
+            logger: self.1.clone(),
             context: context,
             index: 0,
         }
     }
 }
 
-impl<'a> Drop for SoundCore<'a> {
+impl<'a> Drop for SoundCore {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -335,10 +339,7 @@ impl<'a> Drop for SoundCore<'a> {
     }
 }
 
-fn create_sound_core<'a>(
-    clsid: &GUID,
-    logger: &'a Logger,
-) -> Result<SoundCore<'a>, SoundCoreError> {
+fn create_sound_core<'a>(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
     unsafe {
         let mut sc: *mut ISoundCore = mem::uninitialized();
         check(CoCreateInstance(
@@ -352,11 +353,7 @@ fn create_sound_core<'a>(
     }
 }
 
-pub fn get_sound_core<'a>(
-    clsid: &GUID,
-    id: &str,
-    logger: &'a Logger,
-) -> Result<SoundCore<'a>, SoundCoreError> {
+pub fn get_sound_core(clsid: &GUID, id: &str, logger: Logger) -> Result<SoundCore, SoundCoreError> {
     let core = create_sound_core(clsid, logger)?;
     core.bind_hardware(id);
     Ok(core)

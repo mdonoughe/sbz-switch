@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::isize;
 use std::mem;
 use std::os::windows::ffi::OsStringExt;
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::slice;
 
 use regex::Regex;
@@ -23,9 +23,10 @@ use winapi::um::propsys::IPropertyStore;
 use winapi::Interface;
 
 use hresult::{check, Win32Error};
-use soundcore::SoundCoreError;
+use lazy::Lazy;
+use soundcore::{SoundCoreError, PKEY_SOUNDCORECTL_CLSID};
 
-fn get_device_enumerator(logger: &Logger) -> Result<DeviceEnumerator, Win32Error> {
+fn get_device_enumerator(logger: Logger) -> Result<DeviceEnumerator, Win32Error> {
     unsafe {
         let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
         trace!(logger, "Creating DeviceEnumerator...");
@@ -37,7 +38,7 @@ fn get_device_enumerator(logger: &Logger) -> Result<DeviceEnumerator, Win32Error
             &mut enumerator as *mut *mut IMMDeviceEnumerator as *mut _,
         ))?;
         trace!(logger, "Created DeviceEnumerator");
-        Ok(DeviceEnumerator(enumerator, logger))
+        Ok(DeviceEnumerator(NonNull::new(enumerator).unwrap(), logger))
     }
 }
 
@@ -83,25 +84,40 @@ fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
     })
 }
 
-pub struct Endpoint<'a>(*mut IMMDevice, *mut IAudioEndpointVolume, &'a Logger);
+pub struct Endpoint {
+    device: NonNull<IMMDevice>,
+    logger: Logger,
+    volume: Lazy<Result<NonNull<IAudioEndpointVolume>, Win32Error>>,
+    properties: Lazy<Result<PropertyStore, Win32Error>>,
+}
 
-impl<'a> Drop for Endpoint<'a> {
+impl Drop for Endpoint {
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            trace!(self.2, "Releasing Device...");
-            (*self.0).Release();
-            (*self.1).Release();
+            trace!(self.logger, "Releasing Device...");
+            self.device.as_mut().Release();
+            if let Some(Ok(mut volume)) = self.volume.get() {
+                volume.as_mut().Release();
+            }
         }
     }
 }
 
-impl<'a> Endpoint<'a> {
+impl Endpoint {
+    fn new(device: NonNull<IMMDevice>, logger: Logger) -> Self {
+        Self {
+            device,
+            logger,
+            volume: Lazy::new(),
+            properties: Lazy::new(),
+        }
+    }
     pub fn id(&self) -> Result<String, Win32Error> {
         unsafe {
-            trace!(self.2, "Getting device ID...");
+            trace!(self.logger, "Getting device ID...");
             let mut raw_id = mem::uninitialized();
-            check((*self.0).GetId(&mut raw_id))?;
+            check(self.device.as_ref().GetId(&mut raw_id))?;
             let length = (0..isize::MAX)
                 .position(|i| *raw_id.offset(i) == 0)
                 .unwrap();
@@ -110,30 +126,27 @@ impl<'a> Endpoint<'a> {
             Ok(str.to_string_lossy().into_owned())
         }
     }
-    fn property_store(&self) -> Result<PropertyStore<'a>, Win32Error> {
-        unsafe {
-            trace!(self.2, "Opening PropertyStore...");
-            let mut property_store = mem::uninitialized();
-            check((*self.0).OpenPropertyStore(
-                STGM_READ,
-                &mut property_store as *mut *mut IPropertyStore as *mut _,
-            ))?;
-            Ok(PropertyStore(property_store, self.2))
-        }
+    fn property_store(&self) -> Result<&PropertyStore, Win32Error> {
+        self.properties
+            .get_or_create(|| unsafe {
+                trace!(self.logger, "Opening PropertyStore...");
+                let mut property_store = mem::uninitialized();
+                check(self.device.as_ref().OpenPropertyStore(
+                    STGM_READ,
+                    &mut property_store as *mut *mut IPropertyStore as *mut _,
+                ))?;
+                Ok(PropertyStore(
+                    NonNull::new(property_store).unwrap(),
+                    self.logger.clone(),
+                ))
+            })
+            .as_ref()
+            .map_err(|e| e.clone())
     }
     pub fn clsid(&self) -> Result<GUID, SoundCoreError> {
         #[allow(unknown_lints, unreadable_literal)]
-        const KEY_SOUNDCORECTL_CLSID: PROPERTYKEY = PROPERTYKEY {
-            fmtid: GUID {
-                Data1: 0xc949c6aa,
-                Data2: 0x132b,
-                Data3: 0x4511,
-                Data4: [0xbb, 0x1b, 0x35, 0x26, 0x1a, 0x2a, 0x63, 0x33],
-            },
-            pid: 0,
-        };
         unsafe {
-            let property_result = self.property_store()?.get_value(&KEY_SOUNDCORECTL_CLSID);
+            let property_result = self.property_store()?.get_value(&PKEY_SOUNDCORECTL_CLSID);
             match property_result {
                 Err(ref err) if err.code == NTE_NOT_FOUND => {
                     return Err(SoundCoreError::NotSupported)
@@ -142,7 +155,11 @@ impl<'a> Endpoint<'a> {
                 Ok(_) => {}
             }
             let property_value = property_result?;
-            trace!(self.2, "Returned variant has type {}", property_value.vt);
+            trace!(
+                self.logger,
+                "Returned variant has type {}",
+                property_value.vt
+            );
             // VT_LPWSTR
             if property_value.vt != 31 {
                 return Err(SoundCoreError::NotSupported);
@@ -152,105 +169,116 @@ impl<'a> Endpoint<'a> {
             let str = OsString::from_wide(slice::from_raw_parts(chars, length))
                 .to_string_lossy()
                 .into_owned();
-            trace!(self.2, "Returned variant has value {}", &str);
+            trace!(self.logger, "Returned variant has value {}", &str);
             parse_guid(&str).or(Err(SoundCoreError::NotSupported))
         }
     }
+    fn volume(&self) -> Result<NonNull<IAudioEndpointVolume>, Win32Error> {
+        self.volume
+            .get_or_create(|| unsafe {
+                let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
+                check(self.device.as_ref().Activate(
+                    &IAudioEndpointVolume::uuidof(),
+                    CLSCTX_ALL,
+                    ptr::null_mut(),
+                    &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _,
+                ))?;
+                Ok(NonNull::new(ctrl).unwrap())
+            })
+            .clone()
+    }
     pub fn get_mute(&self) -> Result<bool, Win32Error> {
         unsafe {
-            trace!(self.2, "Checking if we are muted...");
+            trace!(self.logger, "Checking if we are muted...");
             let mut mute = 0;
-            check((*self.1).GetMute(&mut mute))?;
-            debug!(self.2, "Muted = {}", mute);
+            check(self.volume()?.as_ref().GetMute(&mut mute))?;
+            debug!(self.logger, "Muted = {}", mute);
             Ok(mute != 0)
         }
     }
     pub fn set_mute(&self, mute: bool) -> Result<(), Win32Error> {
         unsafe {
             let mute = if mute { 1 } else { 0 };
-            info!(self.2, "Setting muted to {}...", mute);
-            check((*self.1).SetMute(mute, ptr::null_mut()))?;
+            info!(self.logger, "Setting muted to {}...", mute);
+            check(self.volume()?.as_mut().SetMute(mute, ptr::null_mut()))?;
             Ok(())
         }
     }
     pub fn set_volume(&self, volume: f32) -> Result<(), Win32Error> {
         unsafe {
-            info!(self.2, "Setting volume to {}...", volume);
-            check((*self.1).SetMasterVolumeLevelScalar(volume, ptr::null_mut()))?;
+            info!(self.logger, "Setting volume to {}...", volume);
+            check(
+                self.volume()?
+                    .as_mut()
+                    .SetMasterVolumeLevelScalar(volume, ptr::null_mut()),
+            )?;
             Ok(())
         }
     }
     pub fn get_volume(&self) -> Result<f32, Win32Error> {
         unsafe {
-            debug!(self.2, "Getting volume...");
+            debug!(self.logger, "Getting volume...");
             let mut volume: f32 = mem::uninitialized();
-            check((*self.1).GetMasterVolumeLevelScalar(&mut volume as *mut f32))?;
-            debug!(self.2, "volume = {}", volume);
+            check(
+                self.volume()?
+                    .as_ref()
+                    .GetMasterVolumeLevelScalar(&mut volume as *mut f32),
+            )?;
+            debug!(self.logger, "volume = {}", volume);
             Ok(volume)
         }
     }
 }
 
-struct PropertyStore<'a>(*mut IPropertyStore, &'a Logger);
+struct PropertyStore(NonNull<IPropertyStore>, Logger);
 
-impl<'a> Drop for PropertyStore<'a> {
+impl Drop for PropertyStore {
     #[inline]
     fn drop(&mut self) {
         unsafe {
             trace!(self.1, "Releasing PropertyStore...");
-            (*self.0).Release();
+            self.0.as_mut().Release();
         }
     }
 }
 
-impl<'a> PropertyStore<'a> {
+impl PropertyStore {
     fn get_value(&self, key: &PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
         unsafe {
             let mut property_value = mem::uninitialized();
-            check((*self.0).GetValue(key, &mut property_value))?;
+            check(self.0.as_ref().GetValue(key, &mut property_value))?;
             Ok(property_value)
         }
     }
 }
 
-pub fn get_default_endpoint(logger: &Logger) -> Result<Endpoint, Win32Error> {
+pub fn get_default_endpoint(logger: Logger) -> Result<Endpoint, Win32Error> {
     get_device_enumerator(logger)?.get_default_audio_endpoint()
 }
 
-struct DeviceEnumerator<'a>(*mut IMMDeviceEnumerator, &'a Logger);
+struct DeviceEnumerator(NonNull<IMMDeviceEnumerator>, Logger);
 
-impl<'a> DeviceEnumerator<'a> {
-    fn get_default_audio_endpoint(&self) -> Result<Endpoint<'a>, Win32Error> {
+impl DeviceEnumerator {
+    fn get_default_audio_endpoint(&self) -> Result<Endpoint, Win32Error> {
         unsafe {
             trace!(self.1, "Getting default endpoint...");
             let mut device = mem::uninitialized();
-            check((*self.0).GetDefaultAudioEndpoint(eRender, eConsole, &mut device))?;
-            let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
-            trace!(self.1, "Getting volume control...");
-            let volume = check((*device).Activate(
-                &IAudioEndpointVolume::uuidof(),
-                CLSCTX_ALL,
-                ptr::null_mut(),
-                &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _,
-            ));
-            match volume {
-                Ok(_) => Ok(Endpoint(device, ctrl, self.1)),
-                Err(err) => {
-                    error!(self.1, "Could not get volume control!");
-                    (*device).Release();
-                    Err(err)
-                }
-            }
+            check(
+                self.0
+                    .as_ref()
+                    .GetDefaultAudioEndpoint(eRender, eConsole, &mut device),
+            )?;
+            Ok(Endpoint::new(NonNull::new(device).unwrap(), self.1.clone()))
         }
     }
 }
 
-impl<'a> Drop for DeviceEnumerator<'a> {
+impl Drop for DeviceEnumerator {
     #[inline]
     fn drop(&mut self) {
         unsafe {
             trace!(self.1, "Releasing DeviceEnumerator...");
-            (*self.0).Release();
+            self.0.as_mut().Release();
         }
     }
 }

@@ -116,9 +116,9 @@ fn main() {
     trace!(logger, "Initialized");
 
     let result = match matches.subcommand() {
-        ("dump", Some(sub_m)) => dump(&logger, sub_m),
-        ("apply", Some(sub_m)) => apply(&logger, sub_m),
-        ("set", Some(sub_m)) => set(&logger, sub_m),
+        ("dump", Some(sub_m)) => dump(logger.clone(), sub_m),
+        ("apply", Some(sub_m)) => apply(logger.clone(), sub_m),
+        ("set", Some(sub_m)) => set(logger.clone(), sub_m),
         _ => Ok(()),
     };
 
@@ -128,7 +128,7 @@ fn main() {
     debug!(logger, "Completed successfully");
 }
 
-fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn dump(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let table = sbz_switch::dump(logger)?;
     let text = toml::to_string(&table)?;
     let output = matches.value_of("output");
@@ -139,7 +139,7 @@ fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     Ok(())
 }
 
-fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn apply(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let mut text = String::new();
     match matches.value_of("file") {
         Some(name) => BufReader::new(File::open(name)?).read_to_string(&mut text)?,
@@ -194,7 +194,7 @@ fn collate_set_values<I, F>(iter: Option<I>, f: F) -> Collator<I, F> {
     Collator { iter: iter, f: f }
 }
 
-fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn set(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let mut creative_table = BTreeMap::<String, BTreeMap<String, Value>>::new();
 
     for (feature, parameter, value) in collate_set_values(matches.values_of("bool"), |s| {

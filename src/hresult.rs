@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 use winapi::shared::ntdef::HRESULT;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Win32Error {
     pub code: HRESULT,
     description: String,
