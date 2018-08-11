@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fmt;
-use winapi::HRESULT;
+use winapi::shared::ntdef::HRESULT;
 
 #[derive(Debug)]
 pub struct Win32Error {

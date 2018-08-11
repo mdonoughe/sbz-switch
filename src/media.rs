@@ -6,16 +6,24 @@ use std::os::windows::ffi::OsStringExt;
 use std::ptr;
 use std::slice;
 
-use ole32::{CoCreateInstance, CoTaskMemFree};
 use regex::Regex;
 use slog::Logger;
-use winapi::{CLSCTX_ALL, CLSID_MMDeviceEnumerator, eConsole, eRender, GUID,
-             IID_IMMDeviceEnumerator, IMMDevice, IMMDeviceEnumerator, NTE_NOT_FOUND};
+use winapi::shared::guiddef::GUID;
+use winapi::shared::winerror::NTE_NOT_FOUND;
+use winapi::shared::wtypes::PROPERTYKEY;
+use winapi::um::combaseapi::CLSCTX_ALL;
+use winapi::um::combaseapi::{CoCreateInstance, CoTaskMemFree};
+use winapi::um::coml2api::STGM_READ;
+use winapi::um::endpointvolume::IAudioEndpointVolume;
+use winapi::um::mmdeviceapi::{
+    eConsole, eRender, CLSID_MMDeviceEnumerator, IMMDevice, IMMDeviceEnumerator,
+};
+use winapi::um::propidl::PROPVARIANT;
+use winapi::um::propsys::IPropertyStore;
+use winapi::Interface;
 
-use hresult::{Win32Error, check};
+use hresult::{check, Win32Error};
 use soundcore::SoundCoreError;
-use winapiext::{IAudioEndpointVolume, IID_AUDIO_ENDPOINT_VOLUME, IPropertyStore, PROPERTYKEY,
-                PROPVARIANT, STGM_READ};
 
 fn get_device_enumerator(logger: &Logger) -> Result<DeviceEnumerator, Win32Error> {
     unsafe {
@@ -25,7 +33,7 @@ fn get_device_enumerator(logger: &Logger) -> Result<DeviceEnumerator, Win32Error
             &CLSID_MMDeviceEnumerator,
             ptr::null_mut(),
             CLSCTX_ALL,
-            &IID_IMMDeviceEnumerator,
+            &IMMDeviceEnumerator::uuidof(),
             &mut enumerator as *mut *mut IMMDeviceEnumerator as *mut _,
         ))?;
         trace!(logger, "Created DeviceEnumerator");
@@ -36,21 +44,21 @@ fn get_device_enumerator(logger: &Logger) -> Result<DeviceEnumerator, Win32Error
 fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
     let re1 = Regex::new(
         "^\\{([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-\
-        ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
-        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
-        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\\}$",
+         ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
+         ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
+         ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\\}$",
     ).unwrap();
     let re2 = Regex::new(
         "^([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-\
-        ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
-        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
-        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
+         ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
+         ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
+         ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
     ).unwrap();
     let re3 = Regex::new(
         "^([0-9a-fA-F]{8})([0-9a-fA-F]{4})\
-        ([0-9a-fA-F]{4})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
-        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
-        ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
+         ([0-9a-fA-F]{4})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
+         ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
+         ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
     ).unwrap();
 
     let caps = re1.captures(src)
@@ -108,8 +116,7 @@ impl<'a> Endpoint<'a> {
             let mut property_store = mem::uninitialized();
             check((*self.0).OpenPropertyStore(
                 STGM_READ,
-                &mut property_store as *mut *mut IPropertyStore as
-                    *mut _,
+                &mut property_store as *mut *mut IPropertyStore as *mut _,
             ))?;
             Ok(PropertyStore(property_store, self.2))
         }
@@ -152,14 +159,15 @@ impl<'a> Endpoint<'a> {
     pub fn get_mute(&self) -> Result<bool, Win32Error> {
         unsafe {
             trace!(self.2, "Checking if we are muted...");
-            let mut mute = false;
+            let mut mute = 0;
             check((*self.1).GetMute(&mut mute))?;
             debug!(self.2, "Muted = {}", mute);
-            Ok(mute)
+            Ok(mute != 0)
         }
     }
     pub fn set_mute(&self, mute: bool) -> Result<(), Win32Error> {
         unsafe {
+            let mute = if mute { 1 } else { 0 };
             info!(self.2, "Setting muted to {}...", mute);
             check((*self.1).SetMute(mute, ptr::null_mut()))?;
             Ok(())
@@ -168,10 +176,7 @@ impl<'a> Endpoint<'a> {
     pub fn set_volume(&self, volume: f32) -> Result<(), Win32Error> {
         unsafe {
             info!(self.2, "Setting volume to {}...", volume);
-            check((*self.1).SetMasterVolumeLevelScalar(
-                volume,
-                ptr::null_mut(),
-            ))?;
+            check((*self.1).SetMasterVolumeLevelScalar(volume, ptr::null_mut()))?;
             Ok(())
         }
     }
@@ -179,9 +184,7 @@ impl<'a> Endpoint<'a> {
         unsafe {
             debug!(self.2, "Getting volume...");
             let mut volume: f32 = mem::uninitialized();
-            check((*self.1).GetMasterVolumeLevelScalar(
-                &mut volume as *mut f32,
-            ))?;
+            check((*self.1).GetMasterVolumeLevelScalar(&mut volume as *mut f32))?;
             debug!(self.2, "volume = {}", volume);
             Ok(volume)
         }
@@ -221,19 +224,14 @@ impl<'a> DeviceEnumerator<'a> {
         unsafe {
             trace!(self.1, "Getting default endpoint...");
             let mut device = mem::uninitialized();
-            check((*self.0).GetDefaultAudioEndpoint(
-                eRender,
-                eConsole,
-                &mut device,
-            ))?;
+            check((*self.0).GetDefaultAudioEndpoint(eRender, eConsole, &mut device))?;
             let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
             trace!(self.1, "Getting volume control...");
             let volume = check((*device).Activate(
-                &IID_AUDIO_ENDPOINT_VOLUME,
+                &IAudioEndpointVolume::uuidof(),
                 CLSCTX_ALL,
                 ptr::null_mut(),
-                &mut ctrl as *mut *mut IAudioEndpointVolume as
-                    *mut _,
+                &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _,
             ));
             match volume {
                 Ok(_) => Ok(Endpoint(device, ctrl, self.1)),

@@ -2,35 +2,32 @@
 extern crate clap;
 #[macro_use]
 extern crate slog;
-extern crate sloggers;
 extern crate sbz_switch;
+extern crate sloggers;
 extern crate toml;
 
-use clap::{Arg, ArgMatches, App, AppSettings, SubCommand};
+use clap::{AppSettings, Arg, ArgMatches, SubCommand};
 
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs::File;
 use std::io;
-use std::io::BufReader;
 use std::io::prelude::*;
+use std::io::BufReader;
 use std::mem;
 use std::str::FromStr;
 
 use slog::Logger;
-use sloggers::Build;
-use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::types::Severity;
+use sloggers::Build;
 
 use toml::value::Value;
 
-use sbz_switch::{Configuration, EndpointConfiguration, initialize_com, uninitialize_com};
+use sbz_switch::{initialize_com, uninitialize_com, Configuration, EndpointConfiguration};
 
 fn main() {
-    let matches = App::new("sbz-switch")
-        .version("0.1")
-        .about("Switches outputs on Creative Sound Blaster devices")
-        .author("Matthew Donoughe <mdonoughe@gmail.com>")
+    let matches = app_from_crate!()
         .setting(AppSettings::AllowNegativeNumbers)
         .subcommand(
             SubCommand::with_name("dump")
@@ -40,8 +37,7 @@ fn main() {
                         .short("o")
                         .long("output")
                         .value_name("FILE")
-                        .help("Saves the current settings to a file")
-                        .takes_value(true),
+                        .help("Saves the current settings to a file"),
                 ),
         )
         .subcommand(
@@ -51,16 +47,14 @@ fn main() {
                     Arg::with_name("file")
                         .short("f")
                         .value_name("FILE")
-                        .help("Reads the settings from a file instead of stdin")
-                        .takes_value(true),
+                        .help("Reads the settings from a file instead of stdin"),
                 )
                 .arg(
                     Arg::with_name("mute")
                         .short("m")
                         .value_name("true|false")
                         .default_value("true")
-                        .help("Temporarily mutes while changing parameters")
-                        .takes_value(true),
+                        .help("Temporarily mutes while changing parameters"),
                 ),
         )
         .subcommand(
@@ -70,7 +64,6 @@ fn main() {
                     Arg::with_name("bool")
                         .short("b")
                         .help("Sets a boolean value")
-                        .takes_value(true)
                         .multiple(true)
                         .number_of_values(3)
                         .value_names(&["FEATURE", "PARAMETER", "true|false"]),
@@ -79,7 +72,6 @@ fn main() {
                     Arg::with_name("int")
                         .short("i")
                         .help("Sets an integer value")
-                        .takes_value(true)
                         .multiple(true)
                         .number_of_values(3)
                         .value_names(&["FEATURE", "PARAMETER", "VALUE"]),
@@ -88,7 +80,6 @@ fn main() {
                     Arg::with_name("float")
                         .short("f")
                         .help("Sets a floating-point value")
-                        .takes_value(true)
                         .multiple(true)
                         .number_of_values(3)
                         .value_names(&["FEATURE", "PARAMETER", "VALUE"]),
@@ -98,16 +89,14 @@ fn main() {
                         .short("v")
                         .long("volume")
                         .value_name("VOLUME")
-                        .help("Sets the volume, in percent")
-                        .takes_value(true),
+                        .help("Sets the volume, in percent"),
                 )
                 .arg(
                     Arg::with_name("mute")
                         .short("m")
                         .value_name("true|false")
                         .default_value("true")
-                        .help("Temporarily mutes while changing parameters")
-                        .takes_value(true),
+                        .help("Temporarily mutes while changing parameters"),
                 ),
         )
         .get_matches();
@@ -176,30 +165,26 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter {
-            Some(ref mut iter) => {
-                match iter.next() {
-                    Some(value) => {
-                        let first = value;
-                        let second = iter.next().unwrap();
-                        let third = iter.next().unwrap();
-                        let f = &mut self.f;
-                        Some((first, second, f(third)))
-                    }
-                    None => None,
+            Some(ref mut iter) => match iter.next() {
+                Some(value) => {
+                    let first = value;
+                    let second = iter.next().unwrap();
+                    let third = iter.next().unwrap();
+                    let f = &mut self.f;
+                    Some((first, second, f(third)))
                 }
-            }
+                None => None,
+            },
             None => None,
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self.iter {
-            Some(ref iter) => {
-                match iter.size_hint() {
-                    (l, Some(u)) => (l / 3, Some(u / 3)),
-                    (l, None) => (l / 3, None),
-                }
-            }
+            Some(ref iter) => match iter.size_hint() {
+                (l, Some(u)) => (l / 3, Some(u / 3)),
+                (l, None) => (l / 3, None),
+            },
             None => (0, Some(0)),
         }
     }
@@ -212,33 +197,27 @@ fn collate_set_values<I, F>(iter: Option<I>, f: F) -> Collator<I, F> {
 fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let mut creative_table = BTreeMap::<String, BTreeMap<String, Value>>::new();
 
-    for (feature, parameter, value) in
-        collate_set_values(matches.values_of("bool"), |s| {
-            bool::from_str(s).map(Value::Boolean)
-        })
-    {
+    for (feature, parameter, value) in collate_set_values(matches.values_of("bool"), |s| {
+        bool::from_str(s).map(Value::Boolean)
+    }) {
         creative_table
             .entry(feature.to_owned())
             .or_insert_with(BTreeMap::<String, Value>::new)
             .insert(parameter.to_owned(), value?);
     }
 
-    for (feature, parameter, value) in
-        collate_set_values(matches.values_of("float"), |s| {
-            f64::from_str(s).map(Value::Float)
-        })
-    {
+    for (feature, parameter, value) in collate_set_values(matches.values_of("float"), |s| {
+        f64::from_str(s).map(Value::Float)
+    }) {
         creative_table
             .entry(feature.to_owned())
             .or_insert_with(BTreeMap::<String, Value>::new)
             .insert(parameter.to_owned(), value?);
     }
 
-    for (feature, parameter, value) in
-        collate_set_values(matches.values_of("int"), |s| {
-            i64::from_str(s).map(Value::Integer)
-        })
-    {
+    for (feature, parameter, value) in collate_set_values(matches.values_of("int"), |s| {
+        i64::from_str(s).map(Value::Integer)
+    }) {
         creative_table
             .entry(feature.to_owned())
             .or_insert_with(BTreeMap::<String, Value>::new)
@@ -247,9 +226,9 @@ fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
 
     let configuration = Configuration {
         endpoint: Some(EndpointConfiguration {
-            volume: matches.value_of("volume").map(|s| {
-                f32::from_str(s).unwrap() / 100.0
-            }),
+            volume: matches
+                .value_of("volume")
+                .map(|s| f32::from_str(s).unwrap() / 100.0),
         }),
         creative: Some(creative_table),
     };

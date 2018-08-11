@@ -1,6 +1,6 @@
 [package]
 name = "sbz-switch"
-version = "1.1.0"
+version = "2.0.0"
 authors = ["Matthew Donoughe <mdonoughe@gmail.com>"]
 description = "Utility for changing Sound Blaster parameters on Windows"
 repository = "https://github.com/mdonoughe/sbz-switch/"
@@ -13,12 +13,11 @@ license = "MIT/Apache-2.0"
 appveyor = { repository = "mdonoughe/sbz-switch" }
 
 [dependencies]
-clap = "2.27"
-ole32-sys = "0.2"
-regex = "0.2"
+clap = "2.32"
+regex = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
-slog = { version = "2.0", features = ["max_level_trace", "release_max_level_info"] }
+slog = { version = "2.3", features = ["max_level_trace", "release_max_level_info"] }
 sloggers = "0.2"
 toml = "0.4"
-winapi = "0.2"
+winapi = { version = "0.3", features = ["combaseapi", "coml2api", "endpointvolume", "mmdeviceapi", "objbase", "oleauto", "unknwnbase", "winerror"] }

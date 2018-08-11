@@ -1,9 +1,9 @@
 use std::ptr::null_mut;
 
-use ole32::{CoInitializeEx, CoUninitialize};
-use winapi::COINIT_APARTMENTTHREADED;
+use winapi::um::combaseapi::{CoInitializeEx, CoUninitialize};
+use winapi::um::objbase::COINIT_APARTMENTTHREADED;
 
-use hresult::{Win32Error, check};
+use hresult::{check, Win32Error};
 
 pub fn initialize_com() -> Result<(), Win32Error> {
     unsafe { check(CoInitializeEx(null_mut(), COINIT_APARTMENTTHREADED)).and(Ok(())) }

@@ -1,4 +1,3 @@
-extern crate ole32;
 extern crate regex;
 #[macro_use]
 extern crate serde_derive;
@@ -13,7 +12,6 @@ mod ctsndcr;
 mod hresult;
 mod media;
 mod soundcore;
-mod winapiext;
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -24,11 +22,11 @@ use slog::Logger;
 
 use toml::value::{Table, Value};
 
-use media::{Endpoint, get_default_endpoint};
-use soundcore::{get_sound_core, SoundCoreFeature, SoundCoreParameter, SoundCoreParamValue};
+use media::{get_default_endpoint, Endpoint};
+use soundcore::{get_sound_core, SoundCoreFeature, SoundCoreParamValue, SoundCoreParameter};
 
 pub use com::{initialize_com, uninitialize_com};
-pub use hresult::{Win32Error, check};
+pub use hresult::{check, Win32Error};
 pub use soundcore::SoundCoreError;
 
 #[derive(Debug, Deserialize)]
@@ -149,10 +147,7 @@ impl fmt::Display for UnsupportedValueError {
         write!(
             f,
             "Unsupported value for {}.{}. Expected {}, got {}.",
-            self.feature,
-            self.parameter,
-            self.expected,
-            self.actual
+            self.feature, self.parameter, self.expected, self.actual
         )
     }
 }
@@ -210,7 +205,7 @@ fn set_internal(
         debug!(
             logger,
             "Found clsid \
-            {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
+             {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
             clsid.Data1,
             clsid.Data2,
             clsid.Data3,
@@ -254,9 +249,7 @@ fn set_internal(
                 for unhandled in unhandled_parameter_names {
                     warn!(
                         logger,
-                        "Could not find parameter {}.{}",
-                        feature.description,
-                        unhandled
+                        "Could not find parameter {}.{}", feature.description, unhandled
                     );
                 }
             }

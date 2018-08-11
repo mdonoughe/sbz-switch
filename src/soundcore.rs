@@ -1,17 +1,18 @@
 use std::error::Error;
-use std::fmt;
 use std::ffi::OsStr;
+use std::fmt;
 use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 use std::str;
 
-use ole32::CoCreateInstance;
 use slog::Logger;
-use winapi::{CLSCTX_ALL, GUID};
+use winapi::shared::guiddef::GUID;
+use winapi::um::combaseapi::{CoCreateInstance, CLSCTX_ALL};
+use winapi::Interface;
 
-use ctsndcr::{FeatureInfo, HardwareInfo, IID_SOUND_CORE, ISoundCore, Param, ParamInfo, ParamValue};
-use hresult::{Win32Error, check};
+use ctsndcr::{FeatureInfo, HardwareInfo, ISoundCore, Param, ParamInfo, ParamValue};
+use hresult::{check, Win32Error};
 
 #[derive(Debug)]
 pub enum SoundCoreError {
@@ -105,11 +106,10 @@ impl<'a> Iterator for SoundCoreFeatureIterator<'a> {
                         .iter()
                         .position(|i| *i == 0)
                         .unwrap_or_else(|| info.description.len());
-                    let version_length = info.version.iter().position(|i| *i == 0).unwrap_or_else(
-                        || {
-                            info.version.len()
-                        },
-                    );
+                    let version_length = info.version
+                        .iter()
+                        .position(|i| *i == 0)
+                        .unwrap_or_else(|| info.version.len());
                     Some(SoundCoreFeature {
                         core: self.target,
                         logger: self.logger,
@@ -201,7 +201,11 @@ impl<'a> SoundCoreParameter<'a> {
                 },
                 value: match *value {
                     SoundCoreParamValue::Float(f) => mem::transmute(f),
-                    SoundCoreParamValue::Bool(b) => if b { 0xffff_ffff } else { 0 },
+                    SoundCoreParamValue::Bool(b) => if b {
+                        0xffff_ffff
+                    } else {
+                        0
+                    },
                     SoundCoreParamValue::U32(u) => u,
                     SoundCoreParamValue::I32(i) => mem::transmute(i),
                     _ => panic!("tried to set parameter with nothing"),
@@ -209,10 +213,7 @@ impl<'a> SoundCoreParameter<'a> {
             };
             info!(
                 self.logger,
-                "Setting {}.{} = {:?}",
-                self.feature.description,
-                self.description,
-                value
+                "Setting {}.{} = {:?}", self.feature.description, self.description, value
             );
             (*self.core).SetParamValue(param, param_value);
         }
@@ -344,7 +345,7 @@ fn create_sound_core<'a>(
             clsid,
             ptr::null_mut(),
             CLSCTX_ALL,
-            &IID_SOUND_CORE,
+            &ISoundCore::uuidof(),
             &mut sc as *mut *mut ISoundCore as *mut _,
         ))?;
         Ok(SoundCore(sc, logger))

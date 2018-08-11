@@ -2,77 +2,61 @@
 #![allow(dead_code)]
 #![allow(non_snake_case)]
 
-use winapi::GUID;
+use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
 
-#[allow(unknown_lints, unreadable_literal)]
-pub const IID_SOUND_CORE: GUID = GUID {
-    Data1: 0x6111e7c4,
-    Data2: 0x3ea4,
-    Data3: 0x47ed,
-    Data4: [0xb0, 0x74, 0xc6, 0x38, 0x87, 0x52, 0x82, 0xc4],
-};
+DEFINE_PROPERTYKEY!{PKEY_SOUNDCORECTL_CLSID,
+0xc949c6aa, 0x132b, 0x4511,0xbb, 0x1b, 0x35, 0x26, 0x1a, 0x2a, 0x63, 0x33,
+0}
 
-RIDL!(
+RIDL!{#[uuid(0x6111e7c4, 0x3ea4, 0x47ed, 0xb0, 0x74, 0xc6, 0x38, 0x87, 0x52, 0x82, 0xc4)]
 interface ISoundCore(ISoundCoreVtbl): IUnknown(IUnknownVtbl) {
     fn BindHardware(
-        &mut self,
-        hardware_info: *const HardwareInfo
+        hardware_info: *const HardwareInfo,
     ) -> (),
     fn EnumContexts(
-        &mut self,
         index: u32,
-        context_info: *mut ContextInfo
+        context_info: *mut ContextInfo,
     ) -> (),
     fn GetContextInfo(
-        &mut self,
         context: u32,
-        context_info: *mut ContextInfo
+        context_info: *mut ContextInfo,
     ) -> (),
     fn GetContext(
-        &mut self,
-        context: *mut u32
+        context: *mut u32,
     ) -> (),
     fn SetContext(
-        &mut self,
         context: u32,
-        restore_state: u32
+        restore_state: u32,
     ) -> (),
     fn EnumFeatures(
-        &mut self,
         context: u32,
         index: u32,
-        feature_info: *mut FeatureInfo
+        feature_info: *mut FeatureInfo,
     ) -> (),
     fn GetFeatureInfo(
-        &mut self,
         context: u32,
         feature: u32,
-        feature_info: *mut FeatureInfo
+        feature_info: *mut FeatureInfo,
     ) -> (),
     fn EnumParams(
-        &mut self,
         context: u32,
         index: u32,
         feature: u32,
-        param_info: *mut ParamInfo
+        param_info: *mut ParamInfo,
     ) -> (),
     fn GetParamInfo(
-        &mut self,
         param: Param,
-        info: *mut ParamInfo
+        info: *mut ParamInfo,
     ) -> (),
     fn GetParamValue(
-        &mut self,
         param: Param,
-        value: *mut ParamValue
+        value: *mut ParamValue,
     ) -> (),
     fn SetParamValue(
-        &mut self,
         param: Param,
-        value: ParamValue
-    ) -> ()
-}
-);
+        value: ParamValue,
+    ) -> (),
+}}
 
 #[repr(C)]
 #[derive(Debug)]
