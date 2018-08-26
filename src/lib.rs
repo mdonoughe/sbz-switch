@@ -117,10 +117,12 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
 
     let mut context_output = Table::new();
     for feature in core.features(0) {
+        let feature = feature?;
         debug!(logger, "{:08x} {}", feature.id, feature.description);
 
         let mut feature_output = Table::new();
         for parameter in feature.parameters() {
+            let parameter = parameter?;
             debug!(logger, "  {} {}", parameter.id, parameter.description);
             debug!(logger, "    attributes: {}", parameter.attributes);
             if let Some(size) = parameter.size {
@@ -128,17 +130,29 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
             }
             match parameter.kind {
                 1 => {
-                    let value = parameter.get();
+                    let value = parameter.get()?;
                     debug!(logger, "    value:      {:?}", value);
-                    feature_output.insert(parameter.description, convert_from_soundcore(&value));
+                    match value {
+                        SoundCoreParamValue::None => {}
+                        _ => {
+                            feature_output
+                                .insert(parameter.description, convert_from_soundcore(&value));
+                        }
+                    }
                 }
                 0 | 2 | 3 => {
-                    let value = parameter.get();
+                    let value = parameter.get()?;
                     debug!(logger, "    minimum:    {:?}", parameter.min_value);
                     debug!(logger, "    maximum:    {:?}", parameter.max_value);
                     debug!(logger, "    step:       {:?}", parameter.step_size);
                     debug!(logger, "    value:      {:?}", value);
-                    feature_output.insert(parameter.description, convert_from_soundcore(&value));
+                    match value {
+                        SoundCoreParamValue::None => {}
+                        _ => {
+                            feature_output
+                                .insert(parameter.description, convert_from_soundcore(&value));
+                        }
+                    }
                 }
                 5 => {}
                 _ => {
@@ -146,7 +160,10 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
                 }
             }
         }
-        context_output.insert(feature.description, Value::Table(feature_output));
+        // omit feature if no parameters are applicable
+        if !feature_output.is_empty() {
+            context_output.insert(feature.description, Value::Table(feature_output));
+        }
     }
     output.insert("creative".to_owned(), Value::Table(context_output));
 
@@ -264,6 +281,7 @@ fn set_internal(
         }
 
         for feature in core.features(0) {
+            let feature = feature?;
             trace!(logger, "Looking for {} settings...", feature.description);
             if let Some(feature_table) = creative.get(&feature.description) {
                 unhandled_feature_names.remove(&feature.description[..]);
@@ -273,6 +291,7 @@ fn set_internal(
                 }
 
                 for parameter in feature.parameters() {
+                    let parameter = parameter?;
                     trace!(
                         logger,
                         "Looking for {}.{} settings...",
@@ -281,7 +300,7 @@ fn set_internal(
                     );
                     if let Some(value) = feature_table.get(&parameter.description) {
                         unhandled_parameter_names.remove(&parameter.description[..]);
-                        parameter.set(&convert_to_soundcore(&feature, &parameter, value)?);
+                        parameter.set(&convert_to_soundcore(&feature, &parameter, value)?)?;
                     }
                 }
                 for unhandled in unhandled_parameter_names {

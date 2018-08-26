@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Error codes from ctsndcr are now checked. This may expose ordering problems during certain transitions, such as if you try to switch between headphones and 5.1 surround with bass management enabled, because bass management is not applicable with headphones. Previously, the operation would silently fail.
 
 ## [2.0.0] - 2018-08-11
 ### Added
@@ -27,6 +29,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Command to switch speaker configuration and adjust volume.
 
 [Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v2.0.0...HEAD
-[1.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.1.0...v2.0.0
+[2.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v0.1.0...v1.0.0

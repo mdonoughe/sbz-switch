@@ -2,56 +2,57 @@
 #![allow(dead_code)]
 #![allow(non_snake_case)]
 
+use winapi::shared::ntdef::HRESULT;
 use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
 
 RIDL!{#[uuid(0x6111e7c4, 0x3ea4, 0x47ed, 0xb0, 0x74, 0xc6, 0x38, 0x87, 0x52, 0x82, 0xc4)]
 interface ISoundCore(ISoundCoreVtbl): IUnknown(IUnknownVtbl) {
     fn BindHardware(
         hardware_info: *const HardwareInfo,
-    ) -> (),
+    ) -> HRESULT,
     fn EnumContexts(
         index: u32,
         context_info: *mut ContextInfo,
-    ) -> (),
+    ) -> HRESULT,
     fn GetContextInfo(
         context: u32,
         context_info: *mut ContextInfo,
-    ) -> (),
+    ) -> HRESULT,
     fn GetContext(
         context: *mut u32,
-    ) -> (),
+    ) -> HRESULT,
     fn SetContext(
         context: u32,
         restore_state: u32,
-    ) -> (),
+    ) -> HRESULT,
     fn EnumFeatures(
         context: u32,
         index: u32,
         feature_info: *mut FeatureInfo,
-    ) -> (),
+    ) -> HRESULT,
     fn GetFeatureInfo(
         context: u32,
         feature: u32,
         feature_info: *mut FeatureInfo,
-    ) -> (),
+    ) -> HRESULT,
     fn EnumParams(
         context: u32,
         index: u32,
         feature: u32,
         param_info: *mut ParamInfo,
-    ) -> (),
+    ) -> HRESULT,
     fn GetParamInfo(
         param: Param,
         info: *mut ParamInfo,
-    ) -> (),
+    ) -> HRESULT,
     fn GetParamValue(
         param: Param,
         value: *mut ParamValue,
-    ) -> (),
+    ) -> HRESULT,
     fn SetParamValue(
         param: Param,
         value: ParamValue,
-    ) -> (),
+    ) -> HRESULT,
 }}
 
 #[repr(C)]
