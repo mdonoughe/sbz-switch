@@ -189,6 +189,19 @@ pub fn set(
     result
 }
 
+pub fn watch(logger: Logger, device_id: Option<&OsStr>) -> Result<(), Box<Error>> {
+    let endpoint = get_endpoint(logger.clone(), device_id)?;
+    let id = endpoint.id()?;
+    let clsid = endpoint.clsid()?;
+    let core = get_sound_core(&clsid, &id, logger.clone())?;
+
+    for event in core.events()? {
+        println!("{:?}", event?);
+    }
+
+    unreachable!()
+}
+
 #[derive(Debug)]
 struct UnsupportedValueError {
     feature: String,

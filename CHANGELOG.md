@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- The `watch` command dumps out a stream of events such as parameters changing, even if those changes are made from another program.
+
 ### Fixed
 - Error codes from ctsndcr are now checked. This may expose ordering problems during certain transitions, such as if you try to switch between headphones and 5.1 surround with bass management enabled, because bass management is not applicable with headphones. Previously, the operation would silently fail.
 

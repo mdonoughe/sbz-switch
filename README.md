@@ -34,6 +34,7 @@ SUBCOMMANDS:
     help            Prints this message or the help of the given subcommand(s)
     list-devices    prints out the names and IDs of available devices
     set             sets specific parameters
+    watch           watches for events
 ```
 
 ### List Devices
@@ -140,6 +141,24 @@ SelectOutput = 0
 volume = 0.1
 ```
 
+### Watch
+
+> Watch for events such as parameter changes
+
+```
+USAGE:
+    sbz-switch.exe watch [OPTIONS]
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -d, --device <DEVICE_ID>    Specify the device to act on (get id from list-devices)
+```
+
 ## Known issues
 
 There may be a pop during the switch, or applications outputting audio may get confused. This seems to be a problem on Creative's end and happens for me even when switching using the official software.
+
+Order matters when setting parameters. Not only does this program not order the parameters correctly itself, but it may even reorder parameters read from a file such that they apply in the wrong order.

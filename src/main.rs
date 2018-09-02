@@ -111,6 +111,11 @@ fn main() {
                         .help("Temporarily mutes while changing parameters"),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("watch")
+                .about("watches for events")
+                .arg(device_arg.clone()),
+        )
         .get_matches();
 
     if matches.subcommand_name().is_none() {
@@ -132,6 +137,7 @@ fn main() {
         ("dump", Some(sub_m)) => dump(logger.clone(), sub_m),
         ("apply", Some(sub_m)) => apply(logger.clone(), sub_m),
         ("set", Some(sub_m)) => set(logger.clone(), sub_m),
+        ("watch", Some(sub_m)) => watch(logger.clone(), sub_m),
         _ => Ok(()),
     };
 
@@ -255,4 +261,8 @@ fn set(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
 
     let mute = value_t!(matches, "mute", bool)?;
     sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
+}
+
+fn watch(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+    sbz_switch::watch(logger, matches.value_of_os("device"))
 }

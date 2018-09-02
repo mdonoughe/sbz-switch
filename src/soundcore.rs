@@ -1,3 +1,5 @@
+use std::cell::UnsafeCell;
+use std::collections::VecDeque;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
@@ -5,14 +7,28 @@ use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 use std::str;
+use std::sync::Arc;
 
 use slog::Logger;
 use winapi::shared::guiddef::GUID;
+use winapi::shared::ntdef::HANDLE;
 use winapi::shared::winerror::{E_ACCESSDENIED, E_FAIL};
 use winapi::um::combaseapi::{CoCreateInstance, CLSCTX_ALL};
+use winapi::um::combaseapi::{CoWaitForMultipleObjects, CWMO_DISPATCH_CALLS};
+use winapi::um::handleapi::CloseHandle;
+use winapi::um::minwinbase::CRITICAL_SECTION;
+use winapi::um::synchapi::CreateEventW;
+use winapi::um::synchapi::{
+    DeleteCriticalSection, EnterCriticalSection, InitializeCriticalSection, LeaveCriticalSection,
+    SetEvent,
+};
+use winapi::um::winbase::INFINITE;
 use winapi::Interface;
 
-use ctsndcr::{FeatureInfo, HardwareInfo, ISoundCore, Param, ParamInfo, ParamValue};
+use ctsndcr::{
+    EventInfo, FeatureInfo, HardwareInfo, ICallback, IEventNotify, ISoundCore, Param, ParamInfo,
+    ParamValue,
+};
 use hresult::{check, Win32Error};
 
 DEFINE_PROPERTYKEY!{PKEY_SOUNDCORECTL_CLSID,
@@ -116,11 +132,13 @@ impl Iterator for SoundCoreFeatureIterator {
             match info.feature_id {
                 0 => None,
                 _ => {
-                    let description_length = info.description
+                    let description_length = info
+                        .description
                         .iter()
                         .position(|i| *i == 0)
                         .unwrap_or_else(|| info.description.len());
-                    let version_length = info.version
+                    let version_length = info
+                        .version
                         .iter()
                         .position(|i| *i == 0)
                         .unwrap_or_else(|| info.version.len());
@@ -305,7 +323,8 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
             match info.param.feature {
                 0 => None,
                 _ => {
-                    let description_length = info.description
+                    let description_length = info
+                        .description
                         .iter()
                         .position(|i| *i == 0)
                         .unwrap_or_else(|| info.description.len());
@@ -334,11 +353,14 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
     }
 }
 
-pub struct SoundCore(*mut ISoundCore, Logger);
+pub struct SoundCore {
+    sound_core: *mut ISoundCore,
+    logger: Logger,
+}
 
 impl SoundCore {
     fn bind_hardware(&self, id: &str) -> Result<(), Win32Error> {
-        trace!(self.1, "Binding SoundCore to {}...", id);
+        trace!(self.logger, "Binding SoundCore to {}...", id);
         let mut buffer = [0; 260];
         for c in OsStr::new(id).encode_wide().enumerate() {
             buffer[c.0] = c.1;
@@ -347,30 +369,52 @@ impl SoundCore {
             info_type: 0,
             info: buffer,
         };
-        check(unsafe { (*self.0).BindHardware(&info) })?;
+        check(unsafe { (*self.sound_core).BindHardware(&info) })?;
         Ok(())
     }
     pub fn features(&self, context: u32) -> SoundCoreFeatureIterator {
         SoundCoreFeatureIterator {
-            target: self.0,
-            logger: self.1.clone(),
+            target: self.sound_core,
+            logger: self.logger.clone(),
             context: context,
             index: 0,
         }
     }
-}
-
-impl<'a> Drop for SoundCore {
-    #[inline]
-    fn drop(&mut self) {
+    pub fn events(&self) -> Result<SoundCoreEventIterator, Win32Error> {
         unsafe {
-            trace!(self.1, "Releasing SoundCore...");
-            (*self.0).Release();
+            let mut event_notify: *mut IEventNotify = mem::uninitialized();
+            check((*self.sound_core).QueryInterface(
+                &IEventNotify::uuidof(),
+                &mut event_notify as *mut *mut _ as *mut _,
+            ))?;
+            let (mut w32sink, iterator) = event_iterator(event_notify);
+            let callback = ICallback::new(move |e| {
+                // despite our ICallback belonging to STA COM,
+                // this executes on a different plain win32 thread,
+                // so we need to marshal back to the correct thread
+                // and we can't use std :(
+                w32sink.send(*e);
+                Ok(())
+            });
+            let result = check((*event_notify).RegisterEventCallback(0xff, callback));
+            (*callback).Release();
+            result?;
+            Ok(iterator)
         }
     }
 }
 
-fn create_sound_core<'a>(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
+impl Drop for SoundCore {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe {
+            trace!(self.logger, "Releasing SoundCore...");
+            (*self.sound_core).Release();
+        }
+    }
+}
+
+fn create_sound_core(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
     unsafe {
         let mut sc: *mut ISoundCore = mem::uninitialized();
         check(CoCreateInstance(
@@ -380,7 +424,10 @@ fn create_sound_core<'a>(clsid: &GUID, logger: Logger) -> Result<SoundCore, Soun
             &ISoundCore::uuidof(),
             &mut sc as *mut *mut ISoundCore as *mut _,
         ))?;
-        Ok(SoundCore(sc, logger))
+        Ok(SoundCore {
+            sound_core: sc,
+            logger,
+        })
     }
 }
 
@@ -388,4 +435,155 @@ pub fn get_sound_core(clsid: &GUID, id: &str, logger: Logger) -> Result<SoundCor
     let core = create_sound_core(clsid, logger)?;
     core.bind_hardware(id)?;
     Ok(core)
+}
+
+struct SoundCoreEventIteratorState {
+    next: VecDeque<EventInfo>,
+    ready_read: HANDLE,
+    lock: CRITICAL_SECTION,
+    closed_read: bool,
+    closed_write: bool,
+}
+
+impl SoundCoreEventIteratorState {
+    fn new() -> Self {
+        unsafe {
+            let mut result = Self {
+                next: VecDeque::new(),
+                ready_read: CreateEventW(ptr::null_mut(), 0, 0, ptr::null_mut()),
+                lock: mem::uninitialized(),
+                closed_read: false,
+                closed_write: false,
+            };
+            InitializeCriticalSection(&mut result.lock);
+            return result;
+        }
+    }
+}
+
+impl Drop for SoundCoreEventIteratorState {
+    fn drop(&mut self) {
+        unsafe {
+            DeleteCriticalSection(&mut self.lock);
+            CloseHandle(self.ready_read);
+        }
+    }
+}
+
+pub struct SoundCoreEventIterator {
+    event_notify: *mut IEventNotify,
+    inner: Arc<UnsafeCell<SoundCoreEventIteratorState>>,
+}
+
+impl Iterator for SoundCoreEventIterator {
+    type Item = Result<EventInfo, Win32Error>;
+
+    fn next(&mut self) -> Option<Result<EventInfo, Win32Error>> {
+        unsafe {
+            let inner = &mut *self.inner.get();
+            EnterCriticalSection(&mut inner.lock);
+
+            loop {
+                if !inner.next.is_empty() || inner.closed_write {
+                    break;
+                }
+                LeaveCriticalSection(&mut inner.lock);
+
+                let mut zero = mem::uninitialized();
+                match check(CoWaitForMultipleObjects(
+                    CWMO_DISPATCH_CALLS,
+                    INFINITE,
+                    1,
+                    &inner.ready_read as *const _,
+                    &mut zero as *mut _,
+                )) {
+                    Ok(_) => {}
+                    Err(error) => return Some(Err(error)),
+                }
+
+                EnterCriticalSection(&mut inner.lock);
+            }
+
+            let result = inner.next.pop_front();
+
+            LeaveCriticalSection(&mut inner.lock);
+
+            return result.map(Ok);
+        }
+    }
+}
+
+impl Drop for SoundCoreEventIterator {
+    fn drop(&mut self) {
+        unsafe {
+            let inner = &mut *self.inner.get();
+
+            EnterCriticalSection(&mut inner.lock);
+
+            inner.closed_read = true;
+            inner.next.clear();
+
+            LeaveCriticalSection(&mut inner.lock);
+
+            (*self.event_notify).UnregisterEventCallback();
+            (*self.event_notify).Release();
+        }
+    }
+}
+
+struct SoundCoreEventIteratorSink {
+    inner: Arc<UnsafeCell<SoundCoreEventIteratorState>>,
+}
+
+impl SoundCoreEventIteratorSink {
+    pub fn send(&mut self, item: EventInfo) {
+        unsafe {
+            let inner = &mut *self.inner.get();
+            EnterCriticalSection(&mut inner.lock);
+
+            if inner.closed_read {
+                LeaveCriticalSection(&mut inner.lock);
+                return;
+            }
+
+            inner.next.push_back(item);
+
+            SetEvent(inner.ready_read);
+
+            LeaveCriticalSection(&mut inner.lock);
+        }
+    }
+}
+
+unsafe impl Send for SoundCoreEventIteratorSink {}
+unsafe impl Sync for SoundCoreEventIteratorSink {}
+
+impl Drop for SoundCoreEventIteratorSink {
+    fn drop(&mut self) {
+        unsafe {
+            let inner = &mut *self.inner.get();
+            EnterCriticalSection(&mut inner.lock);
+
+            inner.closed_write = true;
+
+            SetEvent(inner.ready_read);
+
+            LeaveCriticalSection(&mut inner.lock);
+        }
+    }
+}
+
+unsafe fn event_iterator(
+    event_notify: *mut IEventNotify,
+) -> (SoundCoreEventIteratorSink, SoundCoreEventIterator) {
+    let inner = Arc::new(UnsafeCell::new(SoundCoreEventIteratorState::new()));
+    (
+        SoundCoreEventIteratorSink {
+            inner: inner.clone(),
+        },
+        SoundCoreEventIterator {
+            inner,
+            event_notify,
+        },
+    )
 }

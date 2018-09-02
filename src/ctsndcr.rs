@@ -2,8 +2,17 @@
 #![allow(dead_code)]
 #![allow(non_snake_case)]
 
+use hresult::Win32Error;
+use std::alloc;
+use std::ptr;
+use std::sync::atomic::{self, AtomicUsize, Ordering};
+use winapi::ctypes::c_void;
+use winapi::shared::guiddef::{IsEqualIID, REFIID};
+use winapi::shared::minwindef::ULONG;
 use winapi::shared::ntdef::HRESULT;
+use winapi::shared::winerror::{E_INVALIDARG, E_NOINTERFACE};
 use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
+use winapi::Interface;
 
 RIDL!{#[uuid(0x6111e7c4, 0x3ea4, 0x47ed, 0xb0, 0x74, 0xc6, 0x38, 0x87, 0x52, 0x82, 0xc4)]
 interface ISoundCore(ISoundCoreVtbl): IUnknown(IUnknownVtbl) {
@@ -52,6 +61,25 @@ interface ISoundCore(ISoundCoreVtbl): IUnknown(IUnknownVtbl) {
     fn SetParamValue(
         param: Param,
         value: ParamValue,
+    ) -> HRESULT,
+    fn GetParamValueEx(
+        param: Param,
+        paramSize: *mut u32,
+        paramData: *mut u8,
+    ) -> HRESULT,
+    fn SetParamValueEx(
+        param: Param,
+        paramSize: u32,
+        paramData: *const u8,
+    ) -> HRESULT,
+    fn ValidateParamValue(
+        param: Param,
+        paramValue: ParamValue,
+    ) -> HRESULT,
+    fn ValidateParamValueEx(
+        param: Param,
+        paramSize: u32,
+        paramData: *const u8,
     ) -> HRESULT,
 }}
 
@@ -103,4 +131,157 @@ pub struct ParamInfo {
     pub default_value: ParamValue,
     pub param_attributes: u32,
     pub description: [u8; 32],
+}
+
+RIDL!{#[uuid(0xf6cb394a, 0xa680, 0x45c0, 0xac, 0xd2, 0xf0, 0x59, 0x56, 0x26, 0xa3, 0xfd)]
+interface IEventNotify(IEventNotifyVtbl): IUnknown(IUnknownVtbl) {
+    fn RegisterEventCallback(
+        eventMask: u32,
+        callback: *mut ICallback,
+    ) -> HRESULT,
+    fn UnregisterEventCallback() -> HRESULT,
+}}
+
+RIDL!{#[uuid(0xb353c442, 0xc49d, 0x4532, 0x9e, 0x3a, 0x1b, 0x20, 0xa1, 0x82, 0xfd, 0x00)]
+interface ICallback(ICallbackVtbl): IUnknown(IUnknownVtbl) {
+    fn EventCallback(
+        eventInfo: EventInfo,
+    ) -> HRESULT,
+}}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct EventInfo {
+    pub event: u32,
+    pub data_or_feature_id: u32,
+    pub param_id: u32,
+}
+
+#[repr(C)]
+struct Callback<C>
+where
+    C: FnMut(&EventInfo) -> Result<(), Win32Error>,
+{
+    lpVtbl: *mut ICallbackVtbl,
+    vtbl: ICallbackVtbl,
+    refs: AtomicUsize,
+    callback: C,
+}
+
+impl ICallback {
+    pub unsafe fn new<C>(callback: C) -> *mut Self
+    where
+        C: Send + 'static + FnMut(&EventInfo) -> Result<(), Win32Error>,
+    {
+        let mut value = Box::new(Callback::<C> {
+            lpVtbl: ptr::null_mut(),
+            vtbl: ICallbackVtbl {
+                parent: IUnknownVtbl {
+                    QueryInterface: callback_query_interface::<C>,
+                    AddRef: callback_add_ref::<C>,
+                    Release: callback_release::<C>,
+                },
+                EventCallback: callback_event_callback::<C>,
+            },
+            refs: AtomicUsize::new(1),
+            callback,
+        });
+        value.lpVtbl = &mut value.vtbl as *mut _;
+        Box::into_raw(value) as *mut Self
+    }
+}
+
+unsafe fn validate<I, C>(this: *mut I) -> Result<*mut Callback<C>, Win32Error>
+where
+    I: Interface,
+    C: FnMut(&EventInfo) -> Result<(), Win32Error>,
+{
+    let this = this as *mut IUnknown;
+    if this.is_null() || (*this).lpVtbl.is_null() {
+        Err(Win32Error::new(E_INVALIDARG))
+    } else if (*(*this).lpVtbl).QueryInterface as usize != callback_query_interface::<C> as usize {
+        Err(Win32Error::new(E_INVALIDARG))
+    } else {
+        Ok(this as *mut Callback<C>)
+    }
+}
+
+unsafe fn uncheck<E>(result: E) -> HRESULT
+where
+    E: FnOnce() -> Result<HRESULT, Win32Error>,
+{
+    match result() {
+        Ok(result) => result,
+        Err(Win32Error { code: code @ _, .. }) => code,
+    }
+}
+
+unsafe extern "system" fn callback_query_interface<C>(
+    this: *mut IUnknown,
+    iid: REFIID,
+    object: *mut *mut c_void,
+) -> HRESULT
+where
+    C: FnMut(&EventInfo) -> Result<(), Win32Error>,
+{
+    uncheck(|| {
+        let this = validate::<_, C>(this)?;
+        let iid = iid.as_ref().unwrap();
+        if IsEqualIID(iid, &IUnknown::uuidof()) || IsEqualIID(iid, &ICallback::uuidof()) {
+            (*this).refs.fetch_add(1, Ordering::Relaxed);
+            *object = this as *mut c_void;
+            Ok(0)
+        } else {
+            *object = ptr::null_mut();
+            Err(Win32Error::new(E_NOINTERFACE))
+        }
+    })
+}
+
+unsafe extern "system" fn callback_add_ref<C>(this: *mut IUnknown) -> ULONG
+where
+    C: FnMut(&EventInfo) -> Result<(), Win32Error>,
+{
+    match validate::<_, C>(this) {
+        Ok(this) => {
+            let count = (*this).refs.fetch_add(1, Ordering::Relaxed) + 1;
+            count as ULONG
+        }
+        Err(_) => 1,
+    }
+}
+
+unsafe extern "system" fn callback_release<C>(this: *mut IUnknown) -> ULONG
+where
+    C: FnMut(&EventInfo) -> Result<(), Win32Error>,
+{
+    match validate::<_, C>(this) {
+        Ok(this) => {
+            let count = (*this).refs.fetch_sub(1, Ordering::Release) - 1;
+            if count == 0 {
+                atomic::fence(Ordering::Acquire);
+                ptr::drop_in_place(this);
+                alloc::dealloc(
+                    this as *mut u8,
+                    alloc::Layout::for_value(this.as_ref().unwrap()),
+                );
+            }
+            count as ULONG
+        }
+        Err(_) => 1,
+    }
+}
+
+unsafe extern "system" fn callback_event_callback<C>(
+    this: *mut ICallback,
+    event_info: EventInfo,
+) -> HRESULT
+where
+    C: FnMut(&EventInfo) -> Result<(), Win32Error>,
+{
+    uncheck(|| {
+        let this = validate::<_, C>(this)?;
+        ((*this).callback)(&event_info)?;
+        Ok(0)
+    })
 }

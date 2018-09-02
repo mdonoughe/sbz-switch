@@ -20,4 +20,4 @@ serde_derive = "1.0"
 slog = { version = "2.3", features = ["max_level_trace", "release_max_level_info"] }
 sloggers = "0.2"
 toml = "0.4"
-winapi = { version = "0.3", features = ["combaseapi", "coml2api", "endpointvolume", "mmdeviceapi", "objbase", "oleauto", "unknwnbase", "winerror"] }
+winapi = { version = "0.3", features = ["combaseapi", "coml2api", "endpointvolume", "mmdeviceapi", "objbase", "oleauto", "synchapi", "unknwnbase", "winerror"] }
