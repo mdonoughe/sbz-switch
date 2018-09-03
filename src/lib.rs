@@ -162,39 +162,42 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
             if let Some(size) = parameter.size {
                 debug!(logger, "    size:       {}", size);
             }
-            match parameter.kind {
-                1 => {
-                    let value = parameter.get()?;
-                    debug!(logger, "    value:      {:?}", value);
-                    match value {
-                        SoundCoreParamValue::None => {}
-                        _ => {
-                            feature_output.insert(
-                                parameter.description.clone(),
-                                convert_from_soundcore(&value),
-                            );
+            // skip read-only parameters
+            if parameter.attributes & 1 == 0 {
+                match parameter.kind {
+                    1 => {
+                        let value = parameter.get()?;
+                        debug!(logger, "    value:      {:?}", value);
+                        match value {
+                            SoundCoreParamValue::None => {}
+                            _ => {
+                                feature_output.insert(
+                                    parameter.description.clone(),
+                                    convert_from_soundcore(&value),
+                                );
+                            }
                         }
                     }
-                }
-                0 | 2 | 3 => {
-                    let value = parameter.get()?;
-                    debug!(logger, "    minimum:    {:?}", parameter.min_value);
-                    debug!(logger, "    maximum:    {:?}", parameter.max_value);
-                    debug!(logger, "    step:       {:?}", parameter.step_size);
-                    debug!(logger, "    value:      {:?}", value);
-                    match value {
-                        SoundCoreParamValue::None => {}
-                        _ => {
-                            feature_output.insert(
-                                parameter.description.clone(),
-                                convert_from_soundcore(&value),
-                            );
+                    0 | 2 | 3 => {
+                        let value = parameter.get()?;
+                        debug!(logger, "    minimum:    {:?}", parameter.min_value);
+                        debug!(logger, "    maximum:    {:?}", parameter.max_value);
+                        debug!(logger, "    step:       {:?}", parameter.step_size);
+                        debug!(logger, "    value:      {:?}", value);
+                        match value {
+                            SoundCoreParamValue::None => {}
+                            _ => {
+                                feature_output.insert(
+                                    parameter.description.clone(),
+                                    convert_from_soundcore(&value),
+                                );
+                            }
                         }
                     }
-                }
-                5 => {}
-                _ => {
-                    debug!(logger, "     kind:      {}", parameter.kind);
+                    5 => {}
+                    _ => {
+                        debug!(logger, "     kind:      {}", parameter.kind);
+                    }
                 }
             }
         }
@@ -382,7 +385,15 @@ fn set_internal(
                     if let Some(value) = feature_table.get(&parameter.description) {
                         unhandled_parameter_names.remove(&parameter.description[..]);
                         let value = &convert_to_soundcore(&feature, &parameter, value)?;
-                        parameter.set(value)?;
+                        if let Err(error) = parameter.set(value) {
+                            error!(
+                                logger,
+                                "Could not set parameter {}.{}: {}",
+                                feature.description,
+                                parameter.description,
+                                error
+                            );
+                        }
                     }
                 }
                 for unhandled in unhandled_parameter_names {
