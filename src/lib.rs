@@ -135,8 +135,10 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
                     match value {
                         SoundCoreParamValue::None => {}
                         _ => {
-                            feature_output
-                                .insert(parameter.description, convert_from_soundcore(&value));
+                            feature_output.insert(
+                                parameter.description.clone(),
+                                convert_from_soundcore(&value),
+                            );
                         }
                     }
                 }
@@ -149,8 +151,10 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
                     match value {
                         SoundCoreParamValue::None => {}
                         _ => {
-                            feature_output
-                                .insert(parameter.description, convert_from_soundcore(&value));
+                            feature_output.insert(
+                                parameter.description.clone(),
+                                convert_from_soundcore(&value),
+                            );
                         }
                     }
                 }
@@ -162,7 +166,7 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
         }
         // omit feature if no parameters are applicable
         if !feature_output.is_empty() {
-            context_output.insert(feature.description, Value::Table(feature_output));
+            context_output.insert(feature.description.clone(), Value::Table(feature_output));
         }
     }
     output.insert("creative".to_owned(), Value::Table(context_output));

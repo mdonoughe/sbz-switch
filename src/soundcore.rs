@@ -71,6 +71,7 @@ impl From<Win32Error> for SoundCoreError {
     }
 }
 
+#[derive(Debug)]
 pub struct SoundCoreFeature {
     core: *mut ISoundCore,
     logger: Logger,
@@ -81,13 +82,49 @@ pub struct SoundCoreFeature {
 }
 
 impl SoundCoreFeature {
+    fn new(core: *mut ISoundCore, logger: Logger, context: u32, info: &FeatureInfo) -> Self {
+        let description_length = info
+            .description
+            .iter()
+            .position(|i| *i == 0)
+            .unwrap_or_else(|| info.description.len());
+        let version_length = info
+            .version
+            .iter()
+            .position(|i| *i == 0)
+            .unwrap_or_else(|| info.version.len());
+        let result = Self {
+            core,
+            logger,
+            context,
+            id: info.feature_id,
+            description: str::from_utf8(&info.description[0..description_length])
+                .unwrap()
+                .to_owned(),
+            version: str::from_utf8(&info.version[0..version_length])
+                .unwrap()
+                .to_owned(),
+        };
+        unsafe {
+            (*core).AddRef();
+        }
+        result
+    }
     pub fn parameters(&self) -> SoundCoreParameterIterator {
-        SoundCoreParameterIterator {
-            target: self.core,
-            logger: self.logger.clone(),
-            context: self.context,
-            feature: self,
-            index: 0,
+        SoundCoreParameterIterator::new(
+            self.core,
+            self.logger.clone(),
+            self.context,
+            self.id,
+            self.description.clone(),
+        )
+    }
+}
+
+impl Drop for SoundCoreFeature {
+    fn drop(&mut self) {
+        unsafe {
+            (*self.core).Release();
         }
     }
 }
@@ -97,6 +134,20 @@ pub struct SoundCoreFeatureIterator {
     logger: Logger,
     context: u32,
     index: u32,
+}
+
+impl SoundCoreFeatureIterator {
+    fn new(target: *mut ISoundCore, logger: Logger, context: u32) -> Self {
+        unsafe {
+            (*target).AddRef();
+        }
+        Self {
+            target,
+            logger,
+            context,
+            index: 0,
+        }
+    }
 }
 
 impl Iterator for SoundCoreFeatureIterator {
@@ -131,31 +182,21 @@ impl Iterator for SoundCoreFeatureIterator {
             self.index += 1;
             match info.feature_id {
                 0 => None,
-                _ => {
-                    let description_length = info
-                        .description
-                        .iter()
-                        .position(|i| *i == 0)
-                        .unwrap_or_else(|| info.description.len());
-                    let version_length = info
-                        .version
-                        .iter()
-                        .position(|i| *i == 0)
-                        .unwrap_or_else(|| info.version.len());
-                    Some(Ok(SoundCoreFeature {
-                        core: self.target,
-                        logger: self.logger.clone(),
-                        context: self.context,
-                        id: info.feature_id,
-                        description: str::from_utf8(&info.description[0..description_length])
-                            .unwrap()
-                            .to_owned(),
-                        version: str::from_utf8(&info.version[0..version_length])
-                            .unwrap()
-                            .to_owned(),
-                    }))
-                }
+                _ => Some(Ok(SoundCoreFeature::new(
+                    self.target,
+                    self.logger.clone(),
+                    self.context,
+                    &info,
+                ))),
             }
+        }
+    }
+}
+
+impl Drop for SoundCoreFeatureIterator {
+    fn drop(&mut self) {
+        unsafe {
+            (*self.target).Release();
         }
     }
 }
@@ -169,11 +210,13 @@ pub enum SoundCoreParamValue {
     None,
 }
 
-pub struct SoundCoreParameter<'a> {
+#[derive(Debug)]
+pub struct SoundCoreParameter {
     core: *mut ISoundCore,
     logger: Logger,
     context: u32,
-    feature: &'a SoundCoreFeature,
+    feature_id: u32,
+    feature_description: String,
     pub id: u32,
     pub kind: u32,
     pub size: Option<u32>,
@@ -184,7 +227,43 @@ pub struct SoundCoreParameter<'a> {
     pub description: String,
 }
 
-impl<'a> SoundCoreParameter<'a> {
+impl SoundCoreParameter {
+    fn new(
+        core: *mut ISoundCore,
+        feature_description: String,
+        logger: Logger,
+        info: &ParamInfo,
+    ) -> Self {
+        let description_length = info
+            .description
+            .iter()
+            .position(|i| *i == 0)
+            .unwrap_or_else(|| info.description.len());
+        let result = Self {
+            core,
+            context: info.param.context,
+            feature_id: info.param.feature,
+            feature_description: feature_description,
+            logger,
+            id: info.param.param,
+            description: str::from_utf8(&info.description[0..description_length])
+                .unwrap()
+                .to_owned(),
+            attributes: info.param_attributes,
+            kind: info.param_type,
+            size: match info.param_type {
+                5 => Some(info.data_size),
+                _ => None,
+            },
+            min_value: convert_param_value(&info.min_value),
+            max_value: convert_param_value(&info.max_value),
+            step_size: convert_param_value(&info.step_size),
+        };
+        unsafe {
+            (*core).AddRef();
+        }
+        result
+    }
     pub fn get(&self) -> Result<SoundCoreParamValue, Win32Error> {
         // varsize -> not supported
         if self.kind == 5 {
@@ -193,7 +272,7 @@ impl<'a> SoundCoreParameter<'a> {
         unsafe {
             let param = Param {
                 context: self.context,
-                feature: self.feature.id,
+                feature: self.feature_id,
                 param: self.id,
             };
             let mut value: ParamValue = mem::uninitialized();
@@ -201,7 +280,7 @@ impl<'a> SoundCoreParameter<'a> {
                 self.logger,
                 "Fetching parameter value .{}.{}.{}...",
                 self.context,
-                self.feature.id,
+                self.feature_id,
                 self.id
             );
             match check((*self.core).GetParamValue(param, &mut value as *mut ParamValue)) {
@@ -211,7 +290,7 @@ impl<'a> SoundCoreParameter<'a> {
                         self.logger,
                         "Got parameter value .{}.{}.{} = {}",
                         self.context,
-                        self.feature.id,
+                        self.feature_id,
                         self.id,
                         "ACCESSDENIED"
                     );
@@ -223,7 +302,7 @@ impl<'a> SoundCoreParameter<'a> {
                 self.logger,
                 "Got parameter value .{}.{}.{} = {:?}",
                 self.context,
-                self.feature.id,
+                self.feature_id,
                 self.id,
                 value
             );
@@ -234,7 +313,7 @@ impl<'a> SoundCoreParameter<'a> {
         unsafe {
             let param = Param {
                 context: self.context,
-                feature: self.feature.id,
+                feature: self.feature_id,
                 param: self.id,
             };
             let param_value = ParamValue {
@@ -259,7 +338,7 @@ impl<'a> SoundCoreParameter<'a> {
             };
             info!(
                 self.logger,
-                "Setting {}.{} = {:?}", self.feature.description, self.description, value
+                "Setting {}.{} = {:?}", self.feature_description, self.description, value
             );
             check((*self.core).SetParamValue(param, param_value))?;
             Ok(())
@@ -267,12 +346,44 @@ impl<'a> SoundCoreParameter<'a> {
     }
 }
 
-pub struct SoundCoreParameterIterator<'a> {
+impl Drop for SoundCoreParameter {
+    fn drop(&mut self) {
+        unsafe {
+            (*self.core).Release();
+        }
+    }
+}
+
+pub struct SoundCoreParameterIterator {
     target: *mut ISoundCore,
     logger: Logger,
     context: u32,
-    feature: &'a SoundCoreFeature,
+    feature_id: u32,
+    feature_description: String,
     index: u32,
+}
+
+impl SoundCoreParameterIterator {
+    fn new(
+        target: *mut ISoundCore,
+        logger: Logger,
+        context: u32,
+        feature_id: u32,
+        feature_description: String,
+    ) -> Self {
+        let result = Self {
+            target,
+            logger,
+            context,
+            feature_id,
+            feature_description,
+            index: 0,
+        };
+        unsafe {
+            (*target).AddRef();
+        }
+        result
+    }
 }
 
 fn convert_param_value(value: &ParamValue) -> SoundCoreParamValue {
@@ -287,23 +398,23 @@ fn convert_param_value(value: &ParamValue) -> SoundCoreParamValue {
     }
 }
 
-impl<'a> Iterator for SoundCoreParameterIterator<'a> {
-    type Item = Result<SoundCoreParameter<'a>, Win32Error>;
+impl Iterator for SoundCoreParameterIterator {
+    type Item = Result<SoundCoreParameter, Win32Error>;
 
-    fn next(&mut self) -> Option<Result<SoundCoreParameter<'a>, Win32Error>> {
+    fn next(&mut self) -> Option<Result<SoundCoreParameter, Win32Error>> {
         unsafe {
             let mut info: ParamInfo = mem::zeroed();
             trace!(
                 self.logger,
                 "Fetching parameter .{}.{}[{}]...",
                 self.context,
-                self.feature.description,
+                self.feature_description,
                 self.index
             );
             match check((*self.target).EnumParams(
                 self.context,
                 self.index,
-                self.feature.id,
+                self.feature_id,
                 &mut info as *mut ParamInfo,
             )) {
                 Ok(_) => {}
@@ -315,40 +426,28 @@ impl<'a> Iterator for SoundCoreParameterIterator<'a> {
                 self.logger,
                 "Got parameter .{}.{}[{}] = {:?}",
                 self.context,
-                self.feature.description,
+                self.feature_description,
                 self.index,
                 info
             );
             self.index += 1;
             match info.param.feature {
                 0 => None,
-                _ => {
-                    let description_length = info
-                        .description
-                        .iter()
-                        .position(|i| *i == 0)
-                        .unwrap_or_else(|| info.description.len());
-                    Some(Ok(SoundCoreParameter {
-                        core: self.target,
-                        context: self.context,
-                        feature: self.feature,
-                        logger: self.logger.clone(),
-                        id: info.param.param,
-                        description: str::from_utf8(&info.description[0..description_length])
-                            .unwrap()
-                            .to_owned(),
-                        attributes: info.param_attributes,
-                        kind: info.param_type,
-                        size: match info.param_type {
-                            5 => Some(info.data_size),
-                            _ => None,
-                        },
-                        min_value: convert_param_value(&info.min_value),
-                        max_value: convert_param_value(&info.max_value),
-                        step_size: convert_param_value(&info.step_size),
-                    }))
-                }
+                _ => Some(Ok(SoundCoreParameter::new(
+                    self.target,
+                    self.feature_description.clone(),
+                    self.logger.clone(),
+                    &info,
+                ))),
             }
+        }
+    }
+}
+
+impl Drop for SoundCoreParameterIterator {
+    fn drop(&mut self) {
+        unsafe {
+            (*self.target).Release();
         }
     }
 }
@@ -373,12 +472,7 @@ impl SoundCore {
         Ok(())
     }
     pub fn features(&self, context: u32) -> SoundCoreFeatureIterator {
-        SoundCoreFeatureIterator {
-            target: self.sound_core,
-            logger: self.logger.clone(),
-            context: context,
-            index: 0,
-        }
+        SoundCoreFeatureIterator::new(self.sound_core, self.logger.clone(), context)
     }
     pub fn events(&self) -> Result<SoundCoreEventIterator, Win32Error> {
         unsafe {
@@ -387,7 +481,8 @@ impl SoundCore {
                 &IEventNotify::uuidof(),
                 &mut event_notify as *mut *mut _ as *mut _,
             ))?;
-            let (mut w32sink, iterator) = event_iterator(event_notify);
+            let (mut w32sink, iterator) =
+                event_iterator(event_notify, self.sound_core, self.logger.clone());
             let callback = ICallback::new(move |e| {
                 // despite our ICallback belonging to STA COM,
                 // this executes on a different plain win32 thread,
@@ -472,13 +567,24 @@ impl Drop for SoundCoreEventIteratorState {
 
 pub struct SoundCoreEventIterator {
     event_notify: *mut IEventNotify,
+    core: *mut ISoundCore,
     inner: Arc<UnsafeCell<SoundCoreEventIteratorState>>,
+    logger: Logger,
+}
+
+#[derive(Debug)]
+pub enum SoundCoreEvent {
+    Unknown(EventInfo),
+    ParamChange {
+        feature: SoundCoreFeature,
+        parameter: SoundCoreParameter,
+    },
 }
 
 impl Iterator for SoundCoreEventIterator {
-    type Item = Result<EventInfo, Win32Error>;
+    type Item = Result<SoundCoreEvent, Win32Error>;
 
-    fn next(&mut self) -> Option<Result<EventInfo, Win32Error>> {
+    fn next(&mut self) -> Option<Result<SoundCoreEvent, Win32Error>> {
         unsafe {
             let inner = &mut *self.inner.get();
             EnterCriticalSection(&mut inner.lock);
@@ -508,7 +614,55 @@ impl Iterator for SoundCoreEventIterator {
 
             LeaveCriticalSection(&mut inner.lock);
 
-            return result.map(Ok);
+            match result {
+                Some(result) => Some(match result.event {
+                    2 => {
+                        let mut feature = mem::zeroed();
+                        let feature = check((*self.core).GetFeatureInfo(
+                            0,
+                            result.data_or_feature_id,
+                            &mut feature,
+                        )).map(|_| feature);
+                        match feature {
+                            Ok(feature) => {
+                                let feature = SoundCoreFeature::new(
+                                    self.core,
+                                    self.logger.clone(),
+                                    0,
+                                    &feature,
+                                );
+                                let mut param = mem::zeroed();
+                                let param = check((*self.core).GetParamInfo(
+                                    Param {
+                                        param: result.param_id,
+                                        feature: result.data_or_feature_id,
+                                        context: 0,
+                                    },
+                                    &mut param,
+                                )).map(|_| param);
+                                match param {
+                                    Ok(param) => {
+                                        let param = SoundCoreParameter::new(
+                                            self.core,
+                                            feature.description.clone(),
+                                            self.logger.clone(),
+                                            &param,
+                                        );
+                                        Ok(SoundCoreEvent::ParamChange {
+                                            feature,
+                                            parameter: param,
+                                        })
+                                    }
+                                    Err(error) => Err(error),
+                                }
+                            }
+                            Err(error) => Err(error),
+                        }
+                    }
+                    _ => Ok(SoundCoreEvent::Unknown(result)),
+                }),
+                None => None,
+            }
         }
     }
 }
@@ -527,6 +681,7 @@ impl Drop for SoundCoreEventIterator {
 
             (*self.event_notify).UnregisterEventCallback();
             (*self.event_notify).Release();
+            (*self.core).Release();
         }
     }
 }
@@ -575,8 +730,11 @@ impl Drop for SoundCoreEventIteratorSink {
 
 unsafe fn event_iterator(
     event_notify: *mut IEventNotify,
+    core: *mut ISoundCore,
+    logger: Logger,
 ) -> (SoundCoreEventIteratorSink, SoundCoreEventIterator) {
     let inner = Arc::new(UnsafeCell::new(SoundCoreEventIteratorState::new()));
+    (*core).AddRef();
     (
         SoundCoreEventIteratorSink {
             inner: inner.clone(),
@@ -584,6 +742,8 @@ unsafe fn event_iterator(
         SoundCoreEventIterator {
             inner,
             event_notify,
+            core,
+            logger,
         },
     )
 }
