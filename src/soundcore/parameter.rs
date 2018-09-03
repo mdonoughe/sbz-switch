@@ -1,11 +1,11 @@
 use std::mem;
-use std::ptr::NonNull;
 use std::str;
 
 use slog::Logger;
 
 use winapi::shared::winerror::E_ACCESSDENIED;
 
+use com::ComObject;
 use ctsndcr::{ISoundCore, Param, ParamInfo, ParamValue};
 use hresult::{check, Win32Error};
 
@@ -27,7 +27,7 @@ pub enum SoundCoreParamValue {
 /// Represents a parameter of a feature.
 #[derive(Debug)]
 pub struct SoundCoreParameter {
-    core: NonNull<ISoundCore>,
+    core: ComObject<ISoundCore>,
     logger: Logger,
     context: u32,
     feature_id: u32,
@@ -52,7 +52,7 @@ pub struct SoundCoreParameter {
 
 impl SoundCoreParameter {
     pub(crate) fn new(
-        mut core: NonNull<ISoundCore>,
+        core: ComObject<ISoundCore>,
         feature_description: String,
         logger: Logger,
         info: &ParamInfo,
@@ -82,9 +82,6 @@ impl SoundCoreParameter {
             max_value: convert_param_value(&info.max_value),
             step_size: convert_param_value(&info.step_size),
         };
-        unsafe {
-            core.as_mut().AddRef();
-        }
         result
     }
     /// Gets the value of a parameter.
@@ -110,7 +107,7 @@ impl SoundCoreParameter {
                 self.feature_id,
                 self.id
             );
-            match check(self.core.as_ref().GetParamValue(param, &mut value)) {
+            match check(self.core.GetParamValue(param, &mut value)) {
                 Ok(_) => {}
                 Err(Win32Error { code: code @ _, .. }) if code == E_ACCESSDENIED => {
                     trace!(
@@ -171,16 +168,8 @@ impl SoundCoreParameter {
                 self.logger,
                 "Setting {}.{} = {:?}", self.feature_description, self.description, value
             );
-            check(self.core.as_mut().SetParamValue(param, param_value))?;
+            check(self.core.SetParamValue(param, param_value))?;
             Ok(())
-        }
-    }
-}
-
-impl Drop for SoundCoreParameter {
-    fn drop(&mut self) {
-        unsafe {
-            self.core.as_mut().Release();
         }
     }
 }

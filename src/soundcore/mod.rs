@@ -2,10 +2,6 @@
 //!
 //! 1. Use [`media`](../media) to find a device.
 //! 2. Use `get_sound_core` to get a `SoundCore` for that device.
-//!
-//! # COM Warning
-//!
-//! Usage of this API requires that CoInitialize has been called on the current thread.
 
 mod consts;
 mod core;

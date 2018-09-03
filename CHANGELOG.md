@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Error codes from ctsndcr are now checked. This may expose ordering problems during certain transitions, such as if you try to switch between headphones and 5.1 surround with bass management enabled, because bass management is not applicable with headphones. Previously, the operation would silently fail.
 
 ### Changed
-- It is no longer necessary to initialize COM before calling the high-level API.
+- It is no longer necessary to initialize COM before calling the API.
 
 ## [2.0.0] - 2018-08-11
 ### Added

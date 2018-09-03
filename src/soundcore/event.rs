@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::mem;
-use std::ptr::{self, NonNull};
+use std::ptr;
 use std::sync::Arc;
 
 use slog::Logger;
@@ -17,6 +17,7 @@ use winapi::um::synchapi::{
 };
 use winapi::um::winbase::INFINITE;
 
+use com::ComObject;
 use ctsndcr::{EventInfo, IEventNotify, ISoundCore, Param};
 use hresult::{check, Win32Error};
 
@@ -62,8 +63,8 @@ impl Drop for SoundCoreEventIteratorState {
 ///
 /// This iterator will block until the next event is available.
 pub struct SoundCoreEventIterator {
-    event_notify: NonNull<IEventNotify>,
-    core: NonNull<ISoundCore>,
+    event_notify: ComObject<IEventNotify>,
+    core: ComObject<ISoundCore>,
     inner: Arc<UnsafeCell<SoundCoreEventIteratorState>>,
     logger: Logger,
 }
@@ -121,7 +122,7 @@ impl Iterator for SoundCoreEventIterator {
                 Some(result) => Some(match result.event {
                     2 => {
                         let mut feature = mem::zeroed();
-                        let feature = check(self.core.as_mut().GetFeatureInfo(
+                        let feature = check(self.core.GetFeatureInfo(
                             0,
                             result.data_or_feature_id,
                             &mut feature,
@@ -129,13 +130,13 @@ impl Iterator for SoundCoreEventIterator {
                         match feature {
                             Ok(feature) => {
                                 let feature = SoundCoreFeature::new(
-                                    self.core,
+                                    self.core.clone(),
                                     self.logger.clone(),
                                     0,
                                     &feature,
                                 );
                                 let mut param = mem::zeroed();
-                                let param = check(self.core.as_mut().GetParamInfo(
+                                let param = check(self.core.GetParamInfo(
                                     Param {
                                         param: result.param_id,
                                         feature: result.data_or_feature_id,
@@ -146,7 +147,7 @@ impl Iterator for SoundCoreEventIterator {
                                 match param {
                                     Ok(param) => {
                                         let param = SoundCoreParameter::new(
-                                            self.core,
+                                            self.core.clone(),
                                             feature.description.clone(),
                                             self.logger.clone(),
                                             &param,
@@ -182,9 +183,7 @@ impl Drop for SoundCoreEventIterator {
 
             LeaveCriticalSection(&mut inner.lock);
 
-            self.event_notify.as_mut().UnregisterEventCallback();
-            self.event_notify.as_mut().Release();
-            self.core.as_mut().Release();
+            self.event_notify.UnregisterEventCallback();
         }
     }
 }
@@ -232,12 +231,11 @@ impl Drop for SoundCoreEventIteratorSink {
 }
 
 pub(crate) unsafe fn event_iterator(
-    event_notify: NonNull<IEventNotify>,
-    mut core: NonNull<ISoundCore>,
+    event_notify: ComObject<IEventNotify>,
+    core: ComObject<ISoundCore>,
     logger: Logger,
 ) -> (SoundCoreEventIteratorSink, SoundCoreEventIterator) {
     let inner = Arc::new(UnsafeCell::new(SoundCoreEventIteratorState::new()));
-    core.as_mut().AddRef();
     (
         SoundCoreEventIteratorSink {
             inner: inner.clone(),

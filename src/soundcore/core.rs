@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::mem;
 use std::os::windows::ffi::OsStrExt;
-use std::ptr::{self, NonNull};
+use std::ptr;
 
 use slog::Logger;
 
@@ -9,6 +9,7 @@ use winapi::shared::guiddef::GUID;
 use winapi::um::combaseapi::{CoCreateInstance, CLSCTX_ALL};
 use winapi::Interface;
 
+use com::{ComObject, ComScope};
 use ctsndcr::{HardwareInfo, ICallback, IEventNotify, ISoundCore};
 use hresult::{check, Win32Error};
 
@@ -19,7 +20,7 @@ use super::{SoundCoreError, SoundCoreEventIterator, SoundCoreFeatureIterator};
 ///
 /// This is a wrapper around `ISoundCore`.
 pub struct SoundCore {
-    sound_core: NonNull<ISoundCore>,
+    sound_core: ComObject<ISoundCore>,
     logger: Logger,
 }
 
@@ -34,12 +35,12 @@ impl SoundCore {
             info_type: 0,
             info: buffer,
         };
-        check(unsafe { self.sound_core.as_mut().BindHardware(&info) })?;
+        check(unsafe { self.sound_core.BindHardware(&info) })?;
         Ok(())
     }
     /// Returns an iterator over the features exposed by a device.
     pub fn features(&self, context: u32) -> SoundCoreFeatureIterator {
-        SoundCoreFeatureIterator::new(self.sound_core, self.logger.clone(), context)
+        SoundCoreFeatureIterator::new(self.sound_core.clone(), self.logger.clone(), context)
     }
     /// Returns an iterator over events produced by the SoundCore API.
     ///
@@ -57,13 +58,13 @@ impl SoundCore {
     pub fn events(&self) -> Result<SoundCoreEventIterator, Win32Error> {
         unsafe {
             let mut event_notify: *mut IEventNotify = mem::uninitialized();
-            check(self.sound_core.as_ref().QueryInterface(
+            check(self.sound_core.QueryInterface(
                 &IEventNotify::uuidof(),
                 &mut event_notify as *mut *mut _ as *mut _,
             ))?;
             let (mut w32sink, iterator) = event_iterator(
-                NonNull::new(event_notify).unwrap(),
-                self.sound_core,
+                ComObject::take(event_notify),
+                self.sound_core.clone(),
                 self.logger.clone(),
             );
             let callback = ICallback::new(move |e| {
@@ -83,16 +84,6 @@ impl SoundCore {
     }
 }
 
-impl Drop for SoundCore {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe {
-            trace!(self.logger, "Releasing SoundCore...");
-            self.sound_core.as_mut().Release();
-        }
-    }
-}
-
 fn create_sound_core(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
     unsafe {
         let mut sc: *mut ISoundCore = mem::uninitialized();
@@ -104,7 +95,7 @@ fn create_sound_core(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCor
             &mut sc as *mut *mut ISoundCore as *mut _,
         ))?;
         Ok(SoundCore {
-            sound_core: NonNull::new(sc).unwrap(),
+            sound_core: ComObject::take(sc),
             logger,
         })
     }
@@ -116,6 +107,7 @@ pub fn get_sound_core(
     device_id: &str,
     logger: Logger,
 ) -> Result<SoundCore, SoundCoreError> {
+    let _scope = ComScope::new();
     let mut core = create_sound_core(clsid, logger)?;
     core.bind_hardware(device_id)?;
     Ok(core)

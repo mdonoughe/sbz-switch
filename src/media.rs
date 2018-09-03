@@ -6,7 +6,7 @@ use std::fmt;
 use std::isize;
 use std::mem;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::ptr::{self, NonNull};
+use std::ptr;
 use std::slice;
 
 use regex::Regex;
@@ -26,6 +26,7 @@ use winapi::um::propidl::PROPVARIANT;
 use winapi::um::propsys::IPropertyStore;
 use winapi::Interface;
 
+use com::{ComObject, ComScope};
 use hresult::{check, Win32Error};
 use lazy::Lazy;
 use soundcore::{SoundCoreError, PKEY_SOUNDCORECTL_CLSID};
@@ -76,27 +77,14 @@ fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
 
 /// Represents an audio device.
 pub struct Endpoint {
-    device: NonNull<IMMDevice>,
+    device: ComObject<IMMDevice>,
     logger: Logger,
-    volume: Lazy<Result<NonNull<IAudioEndpointVolume>, Win32Error>>,
+    volume: Lazy<Result<ComObject<IAudioEndpointVolume>, Win32Error>>,
     properties: Lazy<Result<PropertyStore, Win32Error>>,
 }
 
-impl Drop for Endpoint {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe {
-            trace!(self.logger, "Releasing Device...");
-            self.device.as_mut().Release();
-            if let Some(Ok(mut volume)) = self.volume.get() {
-                volume.as_mut().Release();
-            }
-        }
-    }
-}
-
 impl Endpoint {
-    fn new(device: NonNull<IMMDevice>, logger: Logger) -> Self {
+    fn new(device: ComObject<IMMDevice>, logger: Logger) -> Self {
         Self {
             device,
             logger,
@@ -111,7 +99,7 @@ impl Endpoint {
         unsafe {
             trace!(self.logger, "Getting device ID...");
             let mut raw_id = mem::uninitialized();
-            check(self.device.as_ref().GetId(&mut raw_id))?;
+            check(self.device.GetId(&mut raw_id))?;
             let length = (0..isize::MAX)
                 .position(|i| *raw_id.offset(i) == 0)
                 .unwrap();
@@ -125,12 +113,12 @@ impl Endpoint {
             .get_or_create(|| unsafe {
                 trace!(self.logger, "Opening PropertyStore...");
                 let mut property_store = mem::uninitialized();
-                check(self.device.as_ref().OpenPropertyStore(
+                check(self.device.OpenPropertyStore(
                     STGM_READ,
                     &mut property_store as *mut *mut IPropertyStore as *mut _,
                 ))?;
                 Ok(PropertyStore(
-                    NonNull::new(property_store).unwrap(),
+                    ComObject::take(property_store),
                     self.logger.clone(),
                 ))
             })
@@ -167,17 +155,17 @@ impl Endpoint {
         self.property_store()?
             .get_string_value(&PKEY_Device_DeviceDesc)
     }
-    fn volume(&self) -> Result<NonNull<IAudioEndpointVolume>, Win32Error> {
+    fn volume(&self) -> Result<ComObject<IAudioEndpointVolume>, Win32Error> {
         self.volume
             .get_or_create(|| unsafe {
                 let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
-                check(self.device.as_ref().Activate(
+                check(self.device.Activate(
                     &IAudioEndpointVolume::uuidof(),
                     CLSCTX_ALL,
                     ptr::null_mut(),
                     &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _,
                 ))?;
-                Ok(NonNull::new(ctrl).unwrap())
+                Ok(ComObject::take(ctrl))
             })
             .clone()
     }
@@ -186,7 +174,7 @@ impl Endpoint {
         unsafe {
             trace!(self.logger, "Checking if we are muted...");
             let mut mute = 0;
-            check(self.volume()?.as_ref().GetMute(&mut mute))?;
+            check(self.volume()?.GetMute(&mut mute))?;
             debug!(self.logger, "Muted = {}", mute);
             Ok(mute != 0)
         }
@@ -196,7 +184,7 @@ impl Endpoint {
         unsafe {
             let mute = if mute { 1 } else { 0 };
             info!(self.logger, "Setting muted to {}...", mute);
-            check(self.volume()?.as_mut().SetMute(mute, ptr::null_mut()))?;
+            check(self.volume()?.SetMute(mute, ptr::null_mut()))?;
             Ok(())
         }
     }
@@ -208,7 +196,6 @@ impl Endpoint {
             info!(self.logger, "Setting volume to {}...", volume);
             check(
                 self.volume()?
-                    .as_mut()
                     .SetMasterVolumeLevelScalar(volume, ptr::null_mut()),
             )?;
             Ok(())
@@ -221,7 +208,6 @@ impl Endpoint {
             let mut volume: f32 = mem::uninitialized();
             check(
                 self.volume()?
-                    .as_ref()
                     .GetMasterVolumeLevelScalar(&mut volume as *mut f32),
             )?;
             debug!(self.logger, "volume = {}", volume);
@@ -265,24 +251,14 @@ impl From<Win32Error> for GetPropertyError {
     }
 }
 
-struct PropertyStore(NonNull<IPropertyStore>, Logger);
-
-impl Drop for PropertyStore {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe {
-            trace!(self.1, "Releasing PropertyStore...");
-            self.0.as_mut().Release();
-        }
-    }
-}
+struct PropertyStore(ComObject<IPropertyStore>, Logger);
 
 impl PropertyStore {
     fn get_value(&self, key: &PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
         unsafe {
             trace!(self.1, "Getting property...");
             let mut property_value = mem::uninitialized();
-            check(self.0.as_ref().GetValue(key, &mut property_value))?;
+            check(self.0.GetValue(key, &mut property_value))?;
             Ok(property_value)
         }
     }
@@ -306,12 +282,13 @@ impl PropertyStore {
 }
 
 /// Provides access to the devices available in the current Windows session.
-pub struct DeviceEnumerator(NonNull<IMMDeviceEnumerator>, Logger);
+pub struct DeviceEnumerator(ComObject<IMMDeviceEnumerator>, Logger);
 
 impl DeviceEnumerator {
     /// Creates a new device enumerator with the provided logger.
     pub fn with_logger(logger: Logger) -> Result<Self, Win32Error> {
         unsafe {
+            let _scope = ComScope::new();
             let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
             trace!(logger, "Creating DeviceEnumerator...");
             check(CoCreateInstance(
@@ -322,7 +299,7 @@ impl DeviceEnumerator {
                 &mut enumerator as *mut *mut IMMDeviceEnumerator as *mut _,
             ))?;
             trace!(logger, "Created DeviceEnumerator");
-            Ok(DeviceEnumerator(NonNull::new(enumerator).unwrap(), logger))
+            Ok(DeviceEnumerator(ComObject::take(enumerator), logger))
         }
     }
     /// Gets all active audio outputs.
@@ -330,18 +307,17 @@ impl DeviceEnumerator {
         unsafe {
             trace!(self.1, "Getting active endpoints...");
             let mut collection = mem::uninitialized();
-            check(self.0.as_ref().EnumAudioEndpoints(
-                eRender,
-                DEVICE_STATE_ACTIVE,
-                &mut collection,
-            ))?;
+            check(
+                self.0
+                    .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &mut collection),
+            )?;
             let mut count = 0;
             check((*collection).GetCount(&mut count))?;
             let mut result = Vec::with_capacity(count as usize);
             for i in 0..count {
                 let mut device = mem::uninitialized();
                 check((*collection).Item(i, &mut device))?;
-                result.push(Endpoint::new(NonNull::new(device).unwrap(), self.1.clone()))
+                result.push(Endpoint::new(ComObject::take(device), self.1.clone()))
             }
             Ok(result)
         }
@@ -357,10 +333,9 @@ impl DeviceEnumerator {
             let mut device = mem::uninitialized();
             check(
                 self.0
-                    .as_ref()
                     .GetDefaultAudioEndpoint(eRender, eConsole, &mut device),
             )?;
-            Ok(Endpoint::new(NonNull::new(device).unwrap(), self.1.clone()))
+            Ok(Endpoint::new(ComObject::take(device), self.1.clone()))
         }
     }
     /// Get a specific audio endpoint by its ID.
@@ -369,18 +344,8 @@ impl DeviceEnumerator {
         let buffer: Vec<_> = id.encode_wide().chain(Some(0)).collect();
         unsafe {
             let mut device = mem::uninitialized();
-            check(self.0.as_ref().GetDevice(buffer.as_ptr(), &mut device))?;
-            Ok(Endpoint::new(NonNull::new(device).unwrap(), self.1.clone()))
-        }
-    }
-}
-
-impl Drop for DeviceEnumerator {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe {
-            trace!(self.1, "Releasing DeviceEnumerator...");
-            self.0.as_mut().Release();
+            check(self.0.GetDevice(buffer.as_ptr(), &mut device))?;
+            Ok(Endpoint::new(ComObject::take(device), self.1.clone()))
         }
     }
 }

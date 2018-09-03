@@ -1,8 +1,8 @@
-use std::ptr::NonNull;
 use std::str;
 
 use slog::Logger;
 
+use com::ComObject;
 use ctsndcr::{FeatureInfo, ISoundCore};
 
 use super::SoundCoreParameterIterator;
@@ -10,7 +10,7 @@ use super::SoundCoreParameterIterator;
 /// Represents a feature of a device.
 #[derive(Debug)]
 pub struct SoundCoreFeature {
-    core: NonNull<ISoundCore>,
+    core: ComObject<ISoundCore>,
     logger: Logger,
     context: u32,
     /// A numeric ID of the feature
@@ -23,7 +23,7 @@ pub struct SoundCoreFeature {
 
 impl SoundCoreFeature {
     pub(crate) fn new(
-        mut core: NonNull<ISoundCore>,
+        core: ComObject<ISoundCore>,
         logger: Logger,
         context: u32,
         info: &FeatureInfo,
@@ -38,7 +38,7 @@ impl SoundCoreFeature {
             .iter()
             .position(|i| *i == 0)
             .unwrap_or_else(|| info.version.len());
-        let result = Self {
+        Self {
             core,
             logger,
             context,
@@ -49,28 +49,16 @@ impl SoundCoreFeature {
             version: str::from_utf8(&info.version[0..version_length])
                 .unwrap()
                 .to_owned(),
-        };
-        unsafe {
-            core.as_mut().AddRef();
         }
-        result
     }
     /// Gets an iterator over the parameters of this feature.
     pub fn parameters(&self) -> SoundCoreParameterIterator {
         SoundCoreParameterIterator::new(
-            self.core,
+            self.core.clone(),
             self.logger.clone(),
             self.context,
             self.id,
             self.description.clone(),
         )
-    }
-}
-
-impl Drop for SoundCoreFeature {
-    fn drop(&mut self) {
-        unsafe {
-            self.core.as_mut().Release();
-        }
     }
 }

@@ -1,10 +1,10 @@
 use std::mem;
-use std::ptr::NonNull;
 
 use slog::Logger;
 
 use winapi::shared::winerror::E_FAIL;
 
+use com::ComObject;
 use ctsndcr::{FeatureInfo, ISoundCore};
 use hresult::{check, Win32Error};
 
@@ -12,17 +12,14 @@ use SoundCoreFeature;
 
 /// Iterates over features of a device.
 pub struct SoundCoreFeatureIterator {
-    target: NonNull<ISoundCore>,
+    target: ComObject<ISoundCore>,
     logger: Logger,
     context: u32,
     index: u32,
 }
 
 impl SoundCoreFeatureIterator {
-    pub(crate) fn new(mut target: NonNull<ISoundCore>, logger: Logger, context: u32) -> Self {
-        unsafe {
-            target.as_mut().AddRef();
-        }
+    pub(crate) fn new(target: ComObject<ISoundCore>, logger: Logger, context: u32) -> Self {
         Self {
             target,
             logger,
@@ -46,7 +43,6 @@ impl Iterator for SoundCoreFeatureIterator {
             );
             match check(
                 self.target
-                    .as_mut()
                     .EnumFeatures(self.context, self.index, &mut info),
             ) {
                 Ok(_) => {}
@@ -65,20 +61,12 @@ impl Iterator for SoundCoreFeatureIterator {
             match info.feature_id {
                 0 => None,
                 _ => Some(Ok(SoundCoreFeature::new(
-                    self.target,
+                    self.target.clone(),
                     self.logger.clone(),
                     self.context,
                     &info,
                 ))),
             }
-        }
-    }
-}
-
-impl Drop for SoundCoreFeatureIterator {
-    fn drop(&mut self) {
-        unsafe {
-            self.target.as_mut().Release();
         }
     }
 }

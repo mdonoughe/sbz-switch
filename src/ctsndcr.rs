@@ -1,4 +1,4 @@
-//! Low-level API for manipulating SoundBlaster devices as exposed by the SoundCore COM API.
+//! Raw API for manipulating SoundBlaster devices as exposed by the SoundCore interface.
 //!
 //! This is based on the interfaces of CtSndCr.dll.
 

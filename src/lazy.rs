@@ -12,10 +12,6 @@ impl<T> Lazy<T> {
         }
     }
 
-    pub fn get(&self) -> Option<&T> {
-        unsafe { (*self.inner.get()).as_ref() }
-    }
-
     pub fn get_or_create<C: FnOnce() -> T>(&self, create: C) -> &T {
         unsafe {
             if let Some(ref value) = *self.inner.get() {

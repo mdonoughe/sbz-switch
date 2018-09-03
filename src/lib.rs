@@ -33,7 +33,6 @@ use slog::Logger;
 
 use toml::value::{Table, Value};
 
-use com::ComScope;
 use soundcore::{get_sound_core, SoundCoreFeature, SoundCoreParamValue, SoundCoreParameter};
 
 pub use com::{initialize_com, uninitialize_com};
@@ -87,7 +86,6 @@ pub struct DeviceInfo {
 /// }
 /// ```
 pub fn list_devices(logger: Logger) -> Result<Vec<DeviceInfo>, Box<Error>> {
-    let _scope = ComScope::new();
     let endpoints = DeviceEnumerator::with_logger(logger.clone())?.get_active_audio_endpoints()?;
     let mut result = Vec::with_capacity(endpoints.len());
     for endpoint in endpoints {
@@ -120,7 +118,6 @@ fn get_endpoint(logger: Logger, device_id: Option<&OsStr>) -> Result<Endpoint, W
 /// println!("{:?}", dump(logger.clone(), None)?);
 /// ```
 pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Error>> {
-    let _scope = ComScope::new();
     let mut output = Table::new();
 
     let endpoint = get_endpoint(logger.clone(), device_id)?;
@@ -237,7 +234,6 @@ pub fn set(
     configuration: &Configuration,
     mute: bool,
 ) -> Result<(), Box<Error>> {
-    let _scope = ComScope::new();
     let endpoint = get_endpoint(logger.clone(), device_id)?;
     let mute_unmute = mute && !endpoint.get_mute()?;
     if mute_unmute {
@@ -251,35 +247,6 @@ pub fn set(
     result
 }
 
-/// Iterates over events produced through the SoundCore API.
-///
-/// This allows a program to be notified of events such as switching
-/// between headphones and speakers.
-///
-/// This iterator will block until the next event is available.
-pub struct EventIterator {
-    inner: SoundCoreEventIterator,
-    _scope: ComScope,
-}
-
-impl EventIterator {
-    fn new(inner: SoundCoreEventIterator) -> Result<Self, Win32Error> {
-        let scope = ComScope::new()?;
-        Ok(Self {
-            inner,
-            _scope: scope,
-        })
-    }
-}
-
-impl Iterator for EventIterator {
-    type Item = <SoundCoreEventIterator as Iterator>::Item;
-
-    fn next(&mut self) -> Option<<SoundCoreEventIterator as Iterator>::Item> {
-        self.inner.next()
-    }
-}
-
 /// Get the sequence of events for a device.
 ///
 /// If `device_id` is None, the system default output device will be used.
@@ -291,14 +258,16 @@ impl Iterator for EventIterator {
 ///     println!("{:?}", event);
 /// }
 /// ```
-pub fn watch(logger: Logger, device_id: Option<&OsStr>) -> Result<EventIterator, Box<Error>> {
-    let _scope = ComScope::new();
+pub fn watch(
+    logger: Logger,
+    device_id: Option<&OsStr>,
+) -> Result<SoundCoreEventIterator, Box<Error>> {
     let endpoint = get_endpoint(logger.clone(), device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
     let core = get_sound_core(&clsid, &id, logger.clone())?;
 
-    Ok(EventIterator::new(core.events()?)?)
+    Ok(core.events()?)
 }
 
 #[derive(Debug)]
