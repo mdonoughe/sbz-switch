@@ -2,9 +2,9 @@
 
 //! Provides a high-level API for controlling Creative sound devices.
 //!
-//! For a lower-level API, see [`media`](media) and [`soundcore`](soundcore).
+//! For a lower-level API, see [`media`](media/index.html) and [`soundcore`](soundcore/index.html).
 //!
-//! For an even-lower-level API, see [`mmdeviceapi`](../winapi/um/mmdeviceapi) and [`ctsndcr`](ctsndcr).
+//! For an even-lower-level API, see [`mmdeviceapi`](../winapi/um/mmdeviceapi/index.html) and [`ctsndcr`](ctsndcr/index.html).
 
 extern crate regex;
 #[macro_use]
@@ -33,12 +33,12 @@ use slog::Logger;
 
 use toml::value::{Table, Value};
 
-use soundcore::{get_sound_core, SoundCoreFeature, SoundCoreParamValue, SoundCoreParameter};
+use media::{DeviceEnumerator, Endpoint};
+use soundcore::{
+    SoundCore, SoundCoreEventIterator, SoundCoreFeature, SoundCoreParamValue, SoundCoreParameter,
+};
 
-pub use com::{initialize_com, uninitialize_com};
-pub use hresult::{check, Win32Error};
-pub use media::{DeviceEnumerator, Endpoint};
-pub use soundcore::{SoundCoreError, SoundCoreEventIterator};
+pub use hresult::Win32Error;
 
 /// Describes the configuration of a media endpoint.
 #[derive(Debug, Deserialize)]
@@ -147,7 +147,7 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
         clsid.Data4[6],
         clsid.Data4[7]
     );
-    let core = get_sound_core(&clsid, &id, logger.clone())?;
+    let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
 
     let mut context_output = Table::new();
     for feature in core.features(0) {
@@ -250,7 +250,7 @@ pub fn set(
     result
 }
 
-/// Get the sequence of events for a device.
+/// Gets the sequence of events for a device.
 ///
 /// If `device_id` is None, the system default output device will be used.
 ///
@@ -268,7 +268,7 @@ pub fn watch(
     let endpoint = get_endpoint(logger.clone(), device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
-    let core = get_sound_core(&clsid, &id, logger.clone())?;
+    let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
 
     Ok(core.events()?)
 }
@@ -357,7 +357,7 @@ fn set_internal(
             clsid.Data4[6],
             clsid.Data4[7]
         );
-        let core = get_sound_core(&clsid, &id, logger.clone())?;
+        let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
 
         let mut unhandled_feature_names = BTreeSet::<&str>::new();
         for (key, _) in creative.iter() {

@@ -25,6 +25,39 @@ pub struct SoundCore {
 }
 
 impl SoundCore {
+    /// Creates a SoundCore wrapper for a device.
+    ///
+    /// `clsid` is the COM CLSID of the SoundCore implementation to use,
+    /// and can be obtained from [`Endpoint.clsid()`](../media/Endpoint.t.html#method.clsid).
+    ///
+    /// `device_id` is the Windows device ID, and can be obtained from
+    /// [`Endpoint.id()`](../media/Endpoint.t.html#method.id).
+    pub fn for_device(
+        clsid: &GUID,
+        device_id: &str,
+        logger: Logger,
+    ) -> Result<SoundCore, SoundCoreError> {
+        let _scope = ComScope::new();
+        let mut core = SoundCore::new(clsid, logger)?;
+        core.bind_hardware(device_id)?;
+        Ok(core)
+    }
+    fn new(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
+        unsafe {
+            let mut sc: *mut ISoundCore = mem::uninitialized();
+            check(CoCreateInstance(
+                clsid,
+                ptr::null_mut(),
+                CLSCTX_ALL,
+                &ISoundCore::uuidof(),
+                &mut sc as *mut *mut ISoundCore as *mut _,
+            ))?;
+            Ok(SoundCore {
+                sound_core: ComObject::take(sc),
+                logger,
+            })
+        }
+    }
     fn bind_hardware(&mut self, id: &str) -> Result<(), Win32Error> {
         trace!(self.logger, "Binding SoundCore to {}...", id);
         let mut buffer = [0; 260];
@@ -82,33 +115,4 @@ impl SoundCore {
             Ok(iterator)
         }
     }
-}
-
-fn create_sound_core(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
-    unsafe {
-        let mut sc: *mut ISoundCore = mem::uninitialized();
-        check(CoCreateInstance(
-            clsid,
-            ptr::null_mut(),
-            CLSCTX_ALL,
-            &ISoundCore::uuidof(),
-            &mut sc as *mut *mut ISoundCore as *mut _,
-        ))?;
-        Ok(SoundCore {
-            sound_core: ComObject::take(sc),
-            logger,
-        })
-    }
-}
-
-/// Gets a SoundCore wrapper for an instance of the specified CLSID, controlling the specified device ID.
-pub fn get_sound_core(
-    clsid: &GUID,
-    device_id: &str,
-    logger: Logger,
-) -> Result<SoundCore, SoundCoreError> {
-    let _scope = ComScope::new();
-    let mut core = create_sound_core(clsid, logger)?;
-    core.bind_hardware(device_id)?;
-    Ok(core)
 }

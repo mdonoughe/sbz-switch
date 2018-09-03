@@ -190,6 +190,8 @@ impl Endpoint {
     }
     /// Sets the volume of the device.
     ///
+    /// Volumes range from 0.0 to 1.0.
+    ///
     /// Volume can be controlled independent of muting.
     pub fn set_volume(&self, volume: f32) -> Result<(), Win32Error> {
         unsafe {
