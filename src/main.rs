@@ -133,11 +133,11 @@ fn run() -> i32 {
     let logger = builder.build().unwrap();
 
     let result = match matches.subcommand() {
-        ("list-devices", _) => list_devices(logger.clone()),
-        ("dump", Some(sub_m)) => dump(logger.clone(), sub_m),
-        ("apply", Some(sub_m)) => apply(logger.clone(), sub_m),
-        ("set", Some(sub_m)) => set(logger.clone(), sub_m),
-        ("watch", Some(sub_m)) => watch(logger.clone(), sub_m),
+        ("list-devices", _) => list_devices(&logger),
+        ("dump", Some(sub_m)) => dump(&logger, sub_m),
+        ("apply", Some(sub_m)) => apply(&logger, sub_m),
+        ("set", Some(sub_m)) => set(&logger, sub_m),
+        ("watch", Some(sub_m)) => watch(&logger, sub_m),
         _ => Ok(()),
     };
 
@@ -153,14 +153,14 @@ fn run() -> i32 {
     }
 }
 
-fn list_devices(logger: Logger) -> Result<(), Box<Error>> {
+fn list_devices(logger: &Logger) -> Result<(), Box<Error>> {
     let devices = sbz_switch::list_devices(logger)?;
     let text = toml::to_string_pretty(&devices)?;
     print!("{}", text);
     Ok(())
 }
 
-fn dump(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let table = sbz_switch::dump(logger, matches.value_of_os("device"))?;
     let text = toml::to_string_pretty(&table)?;
     let output = matches.value_of("output");
@@ -171,7 +171,7 @@ fn dump(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     Ok(())
 }
 
-fn apply(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let mut text = String::new();
     match matches.value_of("file") {
         Some(name) => BufReader::new(File::open(name)?).read_to_string(&mut text)?,
@@ -223,10 +223,10 @@ where
 }
 
 fn collate_set_values<I, F>(iter: Option<I>, f: F) -> Collator<I, F> {
-    Collator { iter: iter, f: f }
+    Collator { iter, f }
 }
 
-fn set(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     let mut creative_table = BTreeMap::<String, BTreeMap<String, Value>>::new();
 
     for (feature, parameter, value) in collate_set_values(matches.values_of("bool"), |s| {
@@ -269,7 +269,7 @@ fn set(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
 }
 
-fn watch(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn watch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     for event in sbz_switch::watch(logger, matches.value_of_os("device"))? {
         println!("{:?}", event);
     }

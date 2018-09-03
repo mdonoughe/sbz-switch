@@ -89,7 +89,7 @@ pub struct DeviceInfo {
 ///     println!("{}: {}", device.id, device.description);
 /// }
 /// ```
-pub fn list_devices(logger: Logger) -> Result<Vec<DeviceInfo>, Box<Error>> {
+pub fn list_devices(logger: &Logger) -> Result<Vec<DeviceInfo>, Box<Error>> {
     let endpoints = DeviceEnumerator::with_logger(logger.clone())?.get_active_audio_endpoints()?;
     let mut result = Vec::with_capacity(endpoints.len());
     for endpoint in endpoints {
@@ -121,7 +121,7 @@ fn get_endpoint(logger: Logger, device_id: Option<&OsStr>) -> Result<Endpoint, W
 /// ```
 /// println!("{:?}", dump(logger.clone(), None)?);
 /// ```
-pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Error>> {
+pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Error>> {
     let mut output = Table::new();
 
     let endpoint = get_endpoint(logger.clone(), device_id)?;
@@ -236,7 +236,7 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
 /// set(logger.clone(), None, &configuration, true);
 /// ```
 pub fn set(
-    logger: Logger,
+    logger: &Logger,
     device_id: Option<&OsStr>,
     configuration: &Configuration,
     mute: bool,
@@ -266,7 +266,7 @@ pub fn set(
 /// }
 /// ```
 pub fn watch(
-    logger: Logger,
+    logger: &Logger,
     device_id: Option<&OsStr>,
 ) -> Result<SoundCoreEventIterator, Box<Error>> {
     let endpoint = get_endpoint(logger.clone(), device_id)?;
@@ -337,7 +337,7 @@ fn convert_to_soundcore(
 }
 
 fn set_internal(
-    logger: Logger,
+    logger: &Logger,
     configuration: &Configuration,
     endpoint: &Endpoint,
 ) -> Result<(), Box<Error>> {

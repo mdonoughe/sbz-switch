@@ -5,6 +5,8 @@
 #![allow(dead_code)]
 #![allow(missing_docs)]
 #![allow(non_snake_case)]
+#![allow(unknown_lints)]
+#![allow(unreadable_literal)]
 
 use hresult::Win32Error;
 use std::alloc;
@@ -214,9 +216,10 @@ where
     C: FnMut(&EventInfo) -> Result<(), Win32Error>,
 {
     let this = this as *mut IUnknown;
-    if this.is_null() || (*this).lpVtbl.is_null() {
-        Err(Win32Error::new(E_INVALIDARG))
-    } else if (*(*this).lpVtbl).QueryInterface as usize != callback_query_interface::<C> as usize {
+    if this.is_null()
+        || (*this).lpVtbl.is_null()
+        || (*(*this).lpVtbl).QueryInterface as usize != callback_query_interface::<C> as usize
+    {
         Err(Win32Error::new(E_INVALIDARG))
     } else {
         Ok(this as *mut Callback<C>)
@@ -230,7 +233,7 @@ where
 {
     match result() {
         Ok(result) => result,
-        Err(Win32Error { code: code @ _, .. }) => code,
+        Err(Win32Error { code, .. }) => code,
     }
 }
 

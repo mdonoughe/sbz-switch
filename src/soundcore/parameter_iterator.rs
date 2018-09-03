@@ -28,15 +28,14 @@ impl SoundCoreParameterIterator {
         feature_id: u32,
         feature_description: String,
     ) -> Self {
-        let result = Self {
+        Self {
             target,
             logger,
             context,
             feature_id,
             feature_description,
             index: 0,
-        };
-        result
+        }
     }
 }
 
@@ -61,7 +60,7 @@ impl Iterator for SoundCoreParameterIterator {
             )) {
                 Ok(_) => {}
                 // FAIL used to mark end of collection
-                Err(Win32Error { code: code @ _, .. }) if code == E_FAIL => return None,
+                Err(Win32Error { code, .. }) if code == E_FAIL => return None,
                 Err(error) => return Some(Err(error)),
             };
             trace!(

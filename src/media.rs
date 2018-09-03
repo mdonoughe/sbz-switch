@@ -1,5 +1,7 @@
 //! Provides a Rust layer over the Windows IMMDevice API.
 
+#![allow(unknown_lints)]
+
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -15,7 +17,7 @@ use winapi::shared::guiddef::GUID;
 use winapi::shared::winerror::NTE_NOT_FOUND;
 use winapi::shared::wtypes::{PROPERTYKEY, VARTYPE};
 use winapi::um::combaseapi::CLSCTX_ALL;
-use winapi::um::combaseapi::{CoCreateInstance, CoTaskMemFree};
+use winapi::um::combaseapi::{CoCreateInstance, CoTaskMemFree, PropVariantClear};
 use winapi::um::coml2api::STGM_READ;
 use winapi::um::endpointvolume::IAudioEndpointVolume;
 use winapi::um::mmdeviceapi::{
@@ -256,27 +258,32 @@ impl From<Win32Error> for GetPropertyError {
 struct PropertyStore(ComObject<IPropertyStore>, Logger);
 
 impl PropertyStore {
-    fn get_value(&self, key: &PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
-        unsafe {
-            trace!(self.1, "Getting property...");
-            let mut property_value = mem::uninitialized();
-            check(self.0.GetValue(key, &mut property_value))?;
-            Ok(property_value)
-        }
+    unsafe fn get_value(&self, key: &PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
+        trace!(self.1, "Getting property...");
+        let mut property_value = mem::uninitialized();
+        check(self.0.GetValue(key, &mut property_value))?;
+        Ok(property_value)
     }
+    #[allow(cast_ptr_alignment)]
     fn get_string_value(&self, key: &PROPERTYKEY) -> Result<String, GetPropertyError> {
         unsafe {
-            let property_value = self.get_value(key)?;
+            let mut property_value = self.get_value(key)?;
             trace!(self.1, "Returned variant has type {}", property_value.vt);
             // VT_LPWSTR
             if property_value.vt != 31 {
+                PropVariantClear(&mut property_value);
                 return Err(GetPropertyError::UnexpectedType(property_value.vt));
             }
-            let chars = *(property_value.data.as_ptr() as *mut *mut u16);
-            let length = (0..isize::MAX).position(|i| *chars.offset(i) == 0).unwrap();
-            let str = OsString::from_wide(slice::from_raw_parts(chars, length))
-                .to_string_lossy()
-                .into_owned();
+            let chars: *const u16 =
+                ptr::read_unaligned(property_value.data.as_ptr() as *const *const u16);
+            let length = (0..isize::MAX).position(|i| *chars.offset(i) == 0);
+            let str = length.map(|length| {
+                OsString::from_wide(slice::from_raw_parts(chars, length))
+                    .to_string_lossy()
+                    .into_owned()
+            });
+            PropVariantClear(&mut property_value);
+            let str = str.unwrap();
             trace!(self.1, "Returned variant has value {}", &str);
             Ok(str)
         }
@@ -305,6 +312,7 @@ impl DeviceEnumerator {
         }
     }
     /// Gets all active audio outputs.
+    #[allow(unnecessary_mut_passed)]
     pub fn get_active_audio_endpoints(&self) -> Result<Vec<Endpoint>, Win32Error> {
         unsafe {
             trace!(self.1, "Getting active endpoints...");

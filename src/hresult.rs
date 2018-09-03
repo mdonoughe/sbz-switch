@@ -29,7 +29,7 @@ impl Win32Error {
     /// Win32Error::new(error)
     /// ```
     pub fn new(code: HRESULT) -> Win32Error {
-        Win32Error { code: code }
+        Win32Error { code }
     }
 }
 

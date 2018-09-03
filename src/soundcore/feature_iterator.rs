@@ -47,7 +47,7 @@ impl Iterator for SoundCoreFeatureIterator {
             ) {
                 Ok(_) => {}
                 // FAIL used to mark end of collection
-                Err(Win32Error { code: code @ _, .. }) if code == E_FAIL => return None,
+                Err(Win32Error { code, .. }) if code == E_FAIL => return None,
                 Err(error) => return Some(Err(error)),
             };
             trace!(

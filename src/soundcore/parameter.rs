@@ -62,11 +62,11 @@ impl SoundCoreParameter {
             .iter()
             .position(|i| *i == 0)
             .unwrap_or_else(|| info.description.len());
-        let result = Self {
+        Self {
             core,
             context: info.param.context,
             feature_id: info.param.feature,
-            feature_description: feature_description,
+            feature_description,
             logger,
             id: info.param.param,
             description: str::from_utf8(&info.description[0..description_length])
@@ -81,8 +81,7 @@ impl SoundCoreParameter {
             min_value: convert_param_value(&info.min_value),
             max_value: convert_param_value(&info.max_value),
             step_size: convert_param_value(&info.step_size),
-        };
-        result
+        }
     }
     /// Gets the value of a parameter.
     ///
@@ -109,7 +108,7 @@ impl SoundCoreParameter {
             );
             match check(self.core.GetParamValue(param, &mut value)) {
                 Ok(_) => {}
-                Err(Win32Error { code: code @ _, .. }) if code == E_ACCESSDENIED => {
+                Err(Win32Error { code, .. }) if code == E_ACCESSDENIED => {
                     trace!(
                         self.logger,
                         "Got parameter value .{}.{}.{} = {}",

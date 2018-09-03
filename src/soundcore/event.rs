@@ -42,7 +42,7 @@ impl SoundCoreEventIteratorState {
                 closed_write: false,
             };
             InitializeCriticalSection(&mut result.lock);
-            return result;
+            result
         }
     }
 }
