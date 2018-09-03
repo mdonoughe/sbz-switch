@@ -1,3 +1,11 @@
+#![warn(missing_docs)]
+
+//! Provides a high-level API for controlling Creative sound devices.
+//!
+//! For a lower-level API, see [`media`](media) and [`soundcore`](soundcore).
+//!
+//! For an even-lower-level API, see [`mmdeviceapi`](../winapi/um/mmdeviceapi) and [`ctsndcr`](ctsndcr).
+
 extern crate regex;
 #[macro_use]
 extern crate serde_derive;
@@ -8,11 +16,11 @@ extern crate toml;
 extern crate winapi;
 
 mod com;
-mod ctsndcr;
+pub mod ctsndcr;
 mod hresult;
 mod lazy;
-mod media;
-mod soundcore;
+pub mod media;
+pub mod soundcore;
 mod winapiext;
 
 use std::collections::BTreeMap;
@@ -25,21 +33,27 @@ use slog::Logger;
 
 use toml::value::{Table, Value};
 
+use com::ComScope;
 use soundcore::{get_sound_core, SoundCoreFeature, SoundCoreParamValue, SoundCoreParameter};
 
 pub use com::{initialize_com, uninitialize_com};
 pub use hresult::{check, Win32Error};
 pub use media::{DeviceEnumerator, Endpoint};
-pub use soundcore::SoundCoreError;
+pub use soundcore::{SoundCoreError, SoundCoreEventIterator};
 
+/// Describes the configuration of a media endpoint.
 #[derive(Debug, Deserialize)]
 pub struct EndpointConfiguration {
+    /// The desired volume level, from 0.0 to 1.0
     pub volume: Option<f32>,
 }
 
+/// Describes a configuration to be applied.
 #[derive(Debug, Deserialize)]
 pub struct Configuration {
+    /// Windows audio endpoint settings
     pub endpoint: Option<EndpointConfiguration>,
+    /// Creative SoundBlaster settings
     pub creative: Option<BTreeMap<String, BTreeMap<String, Value>>>,
 }
 
@@ -53,6 +67,7 @@ fn convert_from_soundcore(value: &SoundCoreParamValue) -> Value {
     }
 }
 
+/// Describes a device that may be configurable.
 #[derive(Serialize)]
 pub struct DeviceInfo {
     id: String,
@@ -60,7 +75,19 @@ pub struct DeviceInfo {
     description: String,
 }
 
+/// Produces a list of devices currently available.
+///
+/// This may include devices that are not configurable.
+///
+/// # Examples
+///
+/// ```
+/// for device in list_devices(logger.clone())? {
+///     println!("{}: {}", device.id, device.description);
+/// }
+/// ```
 pub fn list_devices(logger: Logger) -> Result<Vec<DeviceInfo>, Box<Error>> {
+    let _scope = ComScope::new();
     let endpoints = DeviceEnumerator::with_logger(logger.clone())?.get_active_audio_endpoints()?;
     let mut result = Vec::with_capacity(endpoints.len());
     for endpoint in endpoints {
@@ -83,7 +110,17 @@ fn get_endpoint(logger: Logger, device_id: Option<&OsStr>) -> Result<Endpoint, W
     })
 }
 
+/// Captures a snapshot of a device's configuration.
+///
+/// If `device_id` is `None`, the system default output device will be used.
+///
+/// # Examples
+///
+/// ```
+/// println!("{:?}", dump(logger.clone(), None)?);
+/// ```
 pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Error>> {
+    let _scope = ComScope::new();
     let mut output = Table::new();
 
     let endpoint = get_endpoint(logger.clone(), device_id)?;
@@ -174,12 +211,33 @@ pub fn dump(logger: Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Erro
     Ok(output)
 }
 
+/// Applies a set of configuration values to a device.
+///
+/// If `device_id` is None, the system default output device will be used.
+///
+/// `mute` controls whether the device is muted at the start of the operation
+/// and unmuted at the end. In any case, the device will not be unmuted if it
+/// was already muted before calling this function.
+///
+/// # Examples
+///
+/// ```
+/// let mut creative = BTreeMap::<String, BTreeMap<String, Value>>::new();
+/// let mut device_control = BTreeMap::<String, Value>::new();
+/// device_control.insert("SelectOutput".to_string(), Value::Integer(1));
+/// let configuration = Configuration {
+///     endpoint: None,
+///     creative,
+/// };
+/// set(logger.clone(), None, &configuration, true);
+/// ```
 pub fn set(
     logger: Logger,
     device_id: Option<&OsStr>,
     configuration: &Configuration,
     mute: bool,
 ) -> Result<(), Box<Error>> {
+    let _scope = ComScope::new();
     let endpoint = get_endpoint(logger.clone(), device_id)?;
     let mute_unmute = mute && !endpoint.get_mute()?;
     if mute_unmute {
@@ -193,17 +251,54 @@ pub fn set(
     result
 }
 
-pub fn watch(logger: Logger, device_id: Option<&OsStr>) -> Result<(), Box<Error>> {
+/// Iterates over events produced through the SoundCore API.
+///
+/// This allows a program to be notified of events such as switching
+/// between headphones and speakers.
+///
+/// This iterator will block until the next event is available.
+pub struct EventIterator {
+    inner: SoundCoreEventIterator,
+    _scope: ComScope,
+}
+
+impl EventIterator {
+    fn new(inner: SoundCoreEventIterator) -> Result<Self, Win32Error> {
+        let scope = ComScope::new()?;
+        Ok(Self {
+            inner,
+            _scope: scope,
+        })
+    }
+}
+
+impl Iterator for EventIterator {
+    type Item = <SoundCoreEventIterator as Iterator>::Item;
+
+    fn next(&mut self) -> Option<<SoundCoreEventIterator as Iterator>::Item> {
+        self.inner.next()
+    }
+}
+
+/// Get the sequence of events for a device.
+///
+/// If `device_id` is None, the system default output device will be used.
+///
+/// # Examples
+///
+/// ```
+/// for event in watch(logger.clone(), None) {
+///     println!("{:?}", event);
+/// }
+/// ```
+pub fn watch(logger: Logger, device_id: Option<&OsStr>) -> Result<EventIterator, Box<Error>> {
+    let _scope = ComScope::new();
     let endpoint = get_endpoint(logger.clone(), device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
     let core = get_sound_core(&clsid, &id, logger.clone())?;
 
-    for event in core.events()? {
-        println!("{:?}", event?);
-    }
-
-    unreachable!()
+    Ok(EventIterator::new(core.events()?)?)
 }
 
 #[derive(Debug)]

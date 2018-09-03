@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 
 // this is like lazy_init, but not Send or Sync
-pub struct Lazy<T> {
+pub(crate) struct Lazy<T> {
     inner: UnsafeCell<Option<T>>,
 }
 

@@ -24,9 +24,13 @@ use sloggers::Build;
 
 use toml::value::Value;
 
-use sbz_switch::{initialize_com, uninitialize_com, Configuration, EndpointConfiguration};
+use sbz_switch::{Configuration, EndpointConfiguration};
 
 fn main() {
+    std::process::exit(run());
+}
+
+fn run() -> i32 {
     let device_arg = Arg::with_name("device")
         .short("d")
         .long("device")
@@ -120,17 +124,13 @@ fn main() {
 
     if matches.subcommand_name().is_none() {
         println!("{}", matches.usage());
-        return;
+        return 1;
     }
 
     let mut builder = TerminalLoggerBuilder::new();
     builder.level(Severity::Debug);
     builder.destination(Destination::Stderr);
     let logger = builder.build().unwrap();
-
-    trace!(logger, "Initializing COM...");
-    initialize_com().unwrap();
-    trace!(logger, "Initialized");
 
     let result = match matches.subcommand() {
         ("list-devices", _) => list_devices(logger.clone()),
@@ -141,10 +141,16 @@ fn main() {
         _ => Ok(()),
     };
 
-    trace!(logger, "Uninitializing COM...");
-    uninitialize_com();
-    result.unwrap();
-    debug!(logger, "Completed successfully");
+    match result {
+        Ok(()) => {
+            debug!(logger, "Completed successfully");
+            0
+        }
+        Err(error) => {
+            crit!(logger, "Unexpected error: {}", error);
+            1
+        }
+    }
 }
 
 fn list_devices(logger: Logger) -> Result<(), Box<Error>> {
@@ -264,5 +270,8 @@ fn set(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
 }
 
 fn watch(logger: Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
-    sbz_switch::watch(logger, matches.value_of_os("device"))
+    for event in sbz_switch::watch(logger, matches.value_of_os("device"))? {
+        println!("{:?}", event);
+    }
+    Ok(())
 }

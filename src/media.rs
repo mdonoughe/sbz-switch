@@ -1,3 +1,5 @@
+//! Provides a Rust layer over the Windows IMMDevice API.
+
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -49,7 +51,8 @@ fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
          ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
     ).unwrap();
 
-    let caps = re1.captures(src)
+    let caps = re1
+        .captures(src)
         .or_else(|| re2.captures(src))
         .or_else(|| re3.captures(src))
         .ok_or(SoundCoreError::NotSupported)?;
@@ -71,6 +74,7 @@ fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
     })
 }
 
+/// Represents an audio device.
 pub struct Endpoint {
     device: NonNull<IMMDevice>,
     logger: Logger,
@@ -100,6 +104,9 @@ impl Endpoint {
             properties: Lazy::new(),
         }
     }
+    /// Gets the ID of the endpoint.
+    ///
+    /// See [Endpoint ID Strings](https://docs.microsoft.com/en-us/windows/desktop/CoreAudio/endpoint-id-strings).
     pub fn id(&self) -> Result<String, Win32Error> {
         unsafe {
             trace!(self.logger, "Getting device ID...");
@@ -130,8 +137,12 @@ impl Endpoint {
             .as_ref()
             .map_err(|e| e.clone())
     }
+    /// Gets the CLSID of the class implementing Creative's APIs.
+    ///
+    /// This allows discovery of a SoundCore implementation for devices that support it.
     pub fn clsid(&self) -> Result<GUID, SoundCoreError> {
-        match self.property_store()?
+        match self
+            .property_store()?
             .get_string_value(&PKEY_SOUNDCORECTL_CLSID)
         {
             Ok(str) => parse_guid(&str).or(Err(SoundCoreError::NotSupported)),
@@ -142,10 +153,16 @@ impl Endpoint {
             Err(GetPropertyError::Win32(error)) => Err(SoundCoreError::Win32(error)),
         }
     }
+    /// Gets the friendly name of the audio interface (sound adapter).
+    ///
+    /// See [Core Audio Properties: Device Properties](https://docs.microsoft.com/en-us/windows/desktop/coreaudio/core-audio-properties#device-properties).
     pub fn interface(&self) -> Result<String, GetPropertyError> {
         self.property_store()?
             .get_string_value(&PKEY_DeviceInterface_FriendlyName)
     }
+    /// Gets a description of the audio endpoint (speakers, headphones, etc).
+    ///
+    /// See [Core Audio Properties: Device Properties](https://docs.microsoft.com/en-us/windows/desktop/coreaudio/core-audio-properties#device-properties).
     pub fn description(&self) -> Result<String, GetPropertyError> {
         self.property_store()?
             .get_string_value(&PKEY_Device_DeviceDesc)
@@ -164,6 +181,7 @@ impl Endpoint {
             })
             .clone()
     }
+    /// Checks whether the device is already muted.
     pub fn get_mute(&self) -> Result<bool, Win32Error> {
         unsafe {
             trace!(self.logger, "Checking if we are muted...");
@@ -173,6 +191,7 @@ impl Endpoint {
             Ok(mute != 0)
         }
     }
+    /// Mutes or unmutes the device.
     pub fn set_mute(&self, mute: bool) -> Result<(), Win32Error> {
         unsafe {
             let mute = if mute { 1 } else { 0 };
@@ -181,6 +200,9 @@ impl Endpoint {
             Ok(())
         }
     }
+    /// Sets the volume of the device.
+    ///
+    /// Volume can be controlled independent of muting.
     pub fn set_volume(&self, volume: f32) -> Result<(), Win32Error> {
         unsafe {
             info!(self.logger, "Setting volume to {}...", volume);
@@ -192,6 +214,7 @@ impl Endpoint {
             Ok(())
         }
     }
+    /// Gets the volume of the device.
     pub fn get_volume(&self) -> Result<f32, Win32Error> {
         unsafe {
             debug!(self.logger, "Getting volume...");
@@ -207,9 +230,12 @@ impl Endpoint {
     }
 }
 
+/// Describes an error that occurred while retrieving a property from a device.
 #[derive(Debug)]
 pub enum GetPropertyError {
+    /// A Win32 error occurred.
     Win32(Win32Error),
+    /// The returned value was not the expected type.
     UnexpectedType(VARTYPE),
 }
 
@@ -279,9 +305,11 @@ impl PropertyStore {
     }
 }
 
+/// Provides access to the devices available in the current Windows session.
 pub struct DeviceEnumerator(NonNull<IMMDeviceEnumerator>, Logger);
 
 impl DeviceEnumerator {
+    /// Creates a new device enumerator with the provided logger.
     pub fn with_logger(logger: Logger) -> Result<Self, Win32Error> {
         unsafe {
             let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
@@ -297,6 +325,7 @@ impl DeviceEnumerator {
             Ok(DeviceEnumerator(NonNull::new(enumerator).unwrap(), logger))
         }
     }
+    /// Gets all active audio outputs.
     pub fn get_active_audio_endpoints(&self) -> Result<Vec<Endpoint>, Win32Error> {
         unsafe {
             trace!(self.1, "Getting active endpoints...");
@@ -317,6 +346,11 @@ impl DeviceEnumerator {
             Ok(result)
         }
     }
+    /// Gets the default audio output.
+    ///
+    /// There are multiple default audio outputs in Windows.
+    /// This function gets the device that would be used if the current application
+    /// were to play music or sound effects (as opposed to VOIP audio).
     pub fn get_default_audio_endpoint(&self) -> Result<Endpoint, Win32Error> {
         unsafe {
             trace!(self.1, "Getting default endpoint...");
@@ -329,6 +363,7 @@ impl DeviceEnumerator {
             Ok(Endpoint::new(NonNull::new(device).unwrap(), self.1.clone()))
         }
     }
+    /// Get a specific audio endpoint by its ID.
     pub fn get_endpoint(&self, id: &OsStr) -> Result<Endpoint, Win32Error> {
         trace!(self.1, "Getting endpoint...");
         let buffer: Vec<_> = id.encode_wide().chain(Some(0)).collect();

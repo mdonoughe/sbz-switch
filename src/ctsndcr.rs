@@ -1,5 +1,9 @@
-// this is based on the interfaces of CtSndCr.dll
+//! Low-level API for manipulating SoundBlaster devices as exposed by the SoundCore COM API.
+//!
+//! This is based on the interfaces of CtSndCr.dll.
+
 #![allow(dead_code)]
+#![allow(missing_docs)]
 #![allow(non_snake_case)]
 
 use hresult::Win32Error;
@@ -83,6 +87,7 @@ interface ISoundCore(ISoundCoreVtbl): IUnknown(IUnknownVtbl) {
     ) -> HRESULT,
 }}
 
+/// References a parameter of a feature of a device.
 #[repr(C)]
 #[derive(Debug)]
 pub struct Param {
@@ -91,6 +96,7 @@ pub struct Param {
     pub context: u32,
 }
 
+/// Represents a value of a parameter.
 #[repr(C)]
 #[derive(Debug)]
 pub struct ParamValue {
@@ -98,12 +104,14 @@ pub struct ParamValue {
     pub value: u32,
 }
 
+/// References a hardware device.
 #[repr(C)]
 pub struct HardwareInfo {
     pub info_type: u32,
     pub info: [u16; 260],
 }
 
+/// Describes a context the device may operate in.
 #[repr(C)]
 #[derive(Debug)]
 pub struct ContextInfo {
@@ -111,6 +119,7 @@ pub struct ContextInfo {
     pub description: [u8; 32],
 }
 
+/// Describes a feature exposed by a device.
 #[repr(C)]
 #[derive(Debug)]
 pub struct FeatureInfo {
@@ -119,6 +128,7 @@ pub struct FeatureInfo {
     pub version: [u8; 16],
 }
 
+/// Describes a parameter of a feature exposed by a device.
 #[repr(C)]
 #[derive(Debug)]
 pub struct ParamInfo {
@@ -149,6 +159,7 @@ interface ICallback(ICallbackVtbl): IUnknown(IUnknownVtbl) {
     ) -> HRESULT,
 }}
 
+/// Describes an event that has occurred.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct EventInfo {
@@ -169,6 +180,11 @@ where
 }
 
 impl ICallback {
+    /// Wraps a function in an `ICallback`.
+    ///
+    /// `IEventNotify` allows a single `ICallback` instance to be registered
+    /// for event notifications, but implementing `ICallback` requires a lot
+    /// of COM glue that we shouldn't need to worry about.
     pub unsafe fn new<C>(callback: C) -> *mut Self
     where
         C: Send + 'static + FnMut(&EventInfo) -> Result<(), Win32Error>,
@@ -191,6 +207,7 @@ impl ICallback {
     }
 }
 
+// ensures `this` is an instance of the expected type
 unsafe fn validate<I, C>(this: *mut I) -> Result<*mut Callback<C>, Win32Error>
 where
     I: Interface,
@@ -206,6 +223,7 @@ where
     }
 }
 
+// converts a `Result` to an `HRESULT` so `?` can be used
 unsafe fn uncheck<E>(result: E) -> HRESULT
 where
     E: FnOnce() -> Result<HRESULT, Win32Error>,
