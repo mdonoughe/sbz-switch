@@ -403,7 +403,7 @@ fn set_internal(
                 }
 
                 for parameter in feature.parameters() {
-                    let parameter = parameter?;
+                    let mut parameter = parameter?;
                     trace!(
                         logger,
                         "Looking for {}.{} settings...",
@@ -412,7 +412,8 @@ fn set_internal(
                     );
                     if let Some(value) = feature_table.get(&parameter.description) {
                         unhandled_parameter_names.remove(&parameter.description[..]);
-                        parameter.set(&convert_to_soundcore(&feature, &parameter, value)?)?;
+                        let value = &convert_to_soundcore(&feature, &parameter, value)?;
+                        parameter.set(value)?;
                     }
                 }
                 for unhandled in unhandled_parameter_names {

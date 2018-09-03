@@ -1,4 +1,5 @@
 use std::mem;
+use std::ptr::NonNull;
 use std::str;
 
 use slog::Logger;
@@ -26,7 +27,7 @@ pub enum SoundCoreParamValue {
 /// Represents a parameter of a feature.
 #[derive(Debug)]
 pub struct SoundCoreParameter {
-    core: *mut ISoundCore,
+    core: NonNull<ISoundCore>,
     logger: Logger,
     context: u32,
     feature_id: u32,
@@ -51,7 +52,7 @@ pub struct SoundCoreParameter {
 
 impl SoundCoreParameter {
     pub(crate) fn new(
-        core: *mut ISoundCore,
+        mut core: NonNull<ISoundCore>,
         feature_description: String,
         logger: Logger,
         info: &ParamInfo,
@@ -82,7 +83,7 @@ impl SoundCoreParameter {
             step_size: convert_param_value(&info.step_size),
         };
         unsafe {
-            (*core).AddRef();
+            core.as_mut().AddRef();
         }
         result
     }
@@ -109,7 +110,7 @@ impl SoundCoreParameter {
                 self.feature_id,
                 self.id
             );
-            match check((*self.core).GetParamValue(param, &mut value as *mut ParamValue)) {
+            match check(self.core.as_ref().GetParamValue(param, &mut value)) {
                 Ok(_) => {}
                 Err(Win32Error { code: code @ _, .. }) if code == E_ACCESSDENIED => {
                     trace!(
@@ -139,7 +140,7 @@ impl SoundCoreParameter {
     ///
     /// May return `Err(Win32Error { code: E_ACCESSDENIED })` when setting a
     /// parameter that is not currently applicable.
-    pub fn set(&self, value: &SoundCoreParamValue) -> Result<(), Win32Error> {
+    pub fn set(&mut self, value: &SoundCoreParamValue) -> Result<(), Win32Error> {
         unsafe {
             let param = Param {
                 context: self.context,
@@ -170,7 +171,7 @@ impl SoundCoreParameter {
                 self.logger,
                 "Setting {}.{} = {:?}", self.feature_description, self.description, value
             );
-            check((*self.core).SetParamValue(param, param_value))?;
+            check(self.core.as_mut().SetParamValue(param, param_value))?;
             Ok(())
         }
     }
@@ -179,7 +180,7 @@ impl SoundCoreParameter {
 impl Drop for SoundCoreParameter {
     fn drop(&mut self) {
         unsafe {
-            (*self.core).Release();
+            self.core.as_mut().Release();
         }
     }
 }

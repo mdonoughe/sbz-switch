@@ -1,4 +1,5 @@
 use std::mem;
+use std::ptr::NonNull;
 
 use slog::Logger;
 
@@ -11,16 +12,16 @@ use SoundCoreFeature;
 
 /// Iterates over features of a device.
 pub struct SoundCoreFeatureIterator {
-    target: *mut ISoundCore,
+    target: NonNull<ISoundCore>,
     logger: Logger,
     context: u32,
     index: u32,
 }
 
 impl SoundCoreFeatureIterator {
-    pub(crate) fn new(target: *mut ISoundCore, logger: Logger, context: u32) -> Self {
+    pub(crate) fn new(mut target: NonNull<ISoundCore>, logger: Logger, context: u32) -> Self {
         unsafe {
-            (*target).AddRef();
+            target.as_mut().AddRef();
         }
         Self {
             target,
@@ -43,11 +44,11 @@ impl Iterator for SoundCoreFeatureIterator {
                 self.context,
                 self.index
             );
-            match check((*self.target).EnumFeatures(
-                self.context,
-                self.index,
-                &mut info as *mut FeatureInfo,
-            )) {
+            match check(
+                self.target
+                    .as_mut()
+                    .EnumFeatures(self.context, self.index, &mut info),
+            ) {
                 Ok(_) => {}
                 // FAIL used to mark end of collection
                 Err(Win32Error { code: code @ _, .. }) if code == E_FAIL => return None,
@@ -77,7 +78,7 @@ impl Iterator for SoundCoreFeatureIterator {
 impl Drop for SoundCoreFeatureIterator {
     fn drop(&mut self) {
         unsafe {
-            (*self.target).Release();
+            self.target.as_mut().Release();
         }
     }
 }

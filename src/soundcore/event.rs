@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::mem;
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::sync::Arc;
 
 use slog::Logger;
@@ -62,8 +62,8 @@ impl Drop for SoundCoreEventIteratorState {
 ///
 /// This iterator will block until the next event is available.
 pub struct SoundCoreEventIterator {
-    event_notify: *mut IEventNotify,
-    core: *mut ISoundCore,
+    event_notify: NonNull<IEventNotify>,
+    core: NonNull<ISoundCore>,
     inner: Arc<UnsafeCell<SoundCoreEventIteratorState>>,
     logger: Logger,
 }
@@ -121,7 +121,7 @@ impl Iterator for SoundCoreEventIterator {
                 Some(result) => Some(match result.event {
                     2 => {
                         let mut feature = mem::zeroed();
-                        let feature = check((*self.core).GetFeatureInfo(
+                        let feature = check(self.core.as_mut().GetFeatureInfo(
                             0,
                             result.data_or_feature_id,
                             &mut feature,
@@ -135,7 +135,7 @@ impl Iterator for SoundCoreEventIterator {
                                     &feature,
                                 );
                                 let mut param = mem::zeroed();
-                                let param = check((*self.core).GetParamInfo(
+                                let param = check(self.core.as_mut().GetParamInfo(
                                     Param {
                                         param: result.param_id,
                                         feature: result.data_or_feature_id,
@@ -182,9 +182,9 @@ impl Drop for SoundCoreEventIterator {
 
             LeaveCriticalSection(&mut inner.lock);
 
-            (*self.event_notify).UnregisterEventCallback();
-            (*self.event_notify).Release();
-            (*self.core).Release();
+            self.event_notify.as_mut().UnregisterEventCallback();
+            self.event_notify.as_mut().Release();
+            self.core.as_mut().Release();
         }
     }
 }
@@ -232,12 +232,12 @@ impl Drop for SoundCoreEventIteratorSink {
 }
 
 pub(crate) unsafe fn event_iterator(
-    event_notify: *mut IEventNotify,
-    core: *mut ISoundCore,
+    event_notify: NonNull<IEventNotify>,
+    mut core: NonNull<ISoundCore>,
     logger: Logger,
 ) -> (SoundCoreEventIteratorSink, SoundCoreEventIterator) {
     let inner = Arc::new(UnsafeCell::new(SoundCoreEventIteratorState::new()));
-    (*core).AddRef();
+    core.as_mut().AddRef();
     (
         SoundCoreEventIteratorSink {
             inner: inner.clone(),

@@ -1,3 +1,4 @@
+use std::ptr::NonNull;
 use std::str;
 
 use slog::Logger;
@@ -9,7 +10,7 @@ use super::SoundCoreParameterIterator;
 /// Represents a feature of a device.
 #[derive(Debug)]
 pub struct SoundCoreFeature {
-    core: *mut ISoundCore,
+    core: NonNull<ISoundCore>,
     logger: Logger,
     context: u32,
     /// A numeric ID of the feature
@@ -22,7 +23,7 @@ pub struct SoundCoreFeature {
 
 impl SoundCoreFeature {
     pub(crate) fn new(
-        core: *mut ISoundCore,
+        mut core: NonNull<ISoundCore>,
         logger: Logger,
         context: u32,
         info: &FeatureInfo,
@@ -50,7 +51,7 @@ impl SoundCoreFeature {
                 .to_owned(),
         };
         unsafe {
-            (*core).AddRef();
+            core.as_mut().AddRef();
         }
         result
     }
@@ -69,7 +70,7 @@ impl SoundCoreFeature {
 impl Drop for SoundCoreFeature {
     fn drop(&mut self) {
         unsafe {
-            (*self.core).Release();
+            self.core.as_mut().Release();
         }
     }
 }

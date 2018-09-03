@@ -1,4 +1,5 @@
 use std::mem;
+use std::ptr::NonNull;
 
 use slog::Logger;
 
@@ -11,7 +12,7 @@ use SoundCoreParameter;
 
 /// Iterates over the parameters of a feature.
 pub struct SoundCoreParameterIterator {
-    target: *mut ISoundCore,
+    target: NonNull<ISoundCore>,
     logger: Logger,
     context: u32,
     feature_id: u32,
@@ -21,7 +22,7 @@ pub struct SoundCoreParameterIterator {
 
 impl SoundCoreParameterIterator {
     pub(crate) fn new(
-        target: *mut ISoundCore,
+        mut target: NonNull<ISoundCore>,
         logger: Logger,
         context: u32,
         feature_id: u32,
@@ -36,7 +37,7 @@ impl SoundCoreParameterIterator {
             index: 0,
         };
         unsafe {
-            (*target).AddRef();
+            target.as_mut().AddRef();
         }
         result
     }
@@ -55,11 +56,11 @@ impl Iterator for SoundCoreParameterIterator {
                 self.feature_description,
                 self.index
             );
-            match check((*self.target).EnumParams(
+            match check(self.target.as_mut().EnumParams(
                 self.context,
                 self.index,
                 self.feature_id,
-                &mut info as *mut ParamInfo,
+                &mut info,
             )) {
                 Ok(_) => {}
                 // FAIL used to mark end of collection
@@ -91,7 +92,7 @@ impl Iterator for SoundCoreParameterIterator {
 impl Drop for SoundCoreParameterIterator {
     fn drop(&mut self) {
         unsafe {
-            (*self.target).Release();
+            self.target.as_mut().Release();
         }
     }
 }
