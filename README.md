@@ -104,6 +104,8 @@ Save the current settings to headphones.toml:
 
     sbz-switch dump -o headphones.toml
 
+Note: saving parameters this way will include many parameters, some of which may not actually be settable when used with the `apply` command. It is recommended to remove unnecessary settings to speed up the transition and avoid errors.
+
 ### Apply
 
 > Set many parameters at once
@@ -128,8 +130,9 @@ Apply the previously saved headphones.toml file:
 
 Omitting the `-f` parameter will cause sbz-switch to read settings from stdin.
 
-Partial dumps are acceptable input for the apply command, in which case the other parameters are left as is. This means it's possible to use a small toml files like this one:
+Partial dumps are acceptable (and recommended) input for the apply command, in which case the other parameters are left as is. This means it's possible to use a small toml files like these:
 
+#### headphones.toml
 ```toml
 [creative."Device Control"]
 SelectOutput = 0
@@ -139,6 +142,18 @@ SelectOutput = 0
 
 [endpoint]
 volume = 0.1
+```
+
+#### speakers.toml
+```toml
+[creative."Device Control"]
+SelectOutput = 1
+
+[creative.EfxMasterControl]
+"THXEfx Master OnOff" = true
+
+[endpoint]
+volume = 0.6
 ```
 
 ### Watch
@@ -161,4 +176,6 @@ OPTIONS:
 
 There may be a pop during the switch, or applications outputting audio may get confused. This seems to be a problem on Creative's end and happens for me even when switching using the official software.
 
-Order matters when setting parameters. Not only does this program not order the parameters correctly itself, but it may even reorder parameters read from a file such that they apply in the wrong order.
+Some parameters are only valid if another parameter has been set or when using certain hardware, e.g. 7.1 surround sound speaker configuration. Unfortunately, these parameters will be included in a full parameter dump and may lead to errors when reapplying the settings later. It should be generally safe to ignore such errors, but they can be avoided by removing the offending settings from the dump file.
+
+Order matters when setting parameters. Not only does this program make no attempt to order the parameters correctly itself, but it does not honor the order of parameters provided in a dump file or passed from the command line. It may be necessary to apply settings more than once if they do not apply correctly the first time.

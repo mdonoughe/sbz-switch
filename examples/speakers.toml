@@ -1,0 +1,8 @@
+[creative."Device Control"]
+SelectOutput = 1
+
+[creative.EfxMasterControl]
+"THXEfx Master OnOff" = true
+
+[endpoint]
+volume = 0.59
