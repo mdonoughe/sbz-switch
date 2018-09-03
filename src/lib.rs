@@ -40,6 +40,10 @@ use soundcore::{
 
 pub use hresult::Win32Error;
 
+#[cfg(not(any(target_arch = "x86", feature = "ctsndcr_ignore_arch")))]
+compile_error!("This crate must be built for x86 for compatibility with sound drivers." +
+    "(build for i686-pc-windows-msvc or suppress this error using feature ctsndcr_ignore_arch)");
+
 /// Describes the configuration of a media endpoint.
 #[derive(Debug, Deserialize)]
 pub struct EndpointConfiguration {
