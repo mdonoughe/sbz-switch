@@ -40,12 +40,12 @@ fn run() -> i32 {
         .setting(AppSettings::AllowNegativeNumbers)
         .subcommand(
             SubCommand::with_name("list-devices")
-                .about("prints out the names and IDs of available devices"),
+                .about("Prints out the names and IDs of available devices"),
         )
         .subcommand(
             SubCommand::with_name("dump")
                 .arg(device_arg.clone())
-                .about("prints out the current configuration")
+                .about("Prints out the current configuration")
                 .arg(
                     Arg::with_name("output")
                         .short("o")
@@ -56,7 +56,7 @@ fn run() -> i32 {
         )
         .subcommand(
             SubCommand::with_name("apply")
-                .about("applies a saved configuration")
+                .about("Applies a saved configuration")
                 .arg(device_arg.clone())
                 .arg(
                     Arg::with_name("file")
@@ -74,7 +74,7 @@ fn run() -> i32 {
         )
         .subcommand(
             SubCommand::with_name("set")
-                .about("sets specific parameters")
+                .about("Sets specific parameters")
                 .arg(device_arg.clone())
                 .arg(
                     Arg::with_name("bool")
@@ -117,7 +117,7 @@ fn run() -> i32 {
         )
         .subcommand(
             SubCommand::with_name("watch")
-                .about("watches for events")
+                .about("Watches for events")
                 .arg(device_arg.clone()),
         )
         .get_matches();

@@ -29,17 +29,17 @@ FLAGS:
     -V, --version    Prints version information
 
 SUBCOMMANDS:
-    apply           applies a saved configuration
-    dump            prints out the current configuration
+    apply           Applies a saved configuration
+    dump            Prints out the current configuration
     help            Prints this message or the help of the given subcommand(s)
-    list-devices    prints out the names and IDs of available devices
-    set             sets specific parameters
-    watch           watches for events
+    list-devices    Prints out the names and IDs of available devices
+    set             Sets specific parameters
+    watch           Watches for events
 ```
 
 ### List Devices
 
-> Find available audio devices
+> Find devices to control
 
 ```
 USAGE:
@@ -49,6 +49,32 @@ FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
 ```
+
+If the Sound Blaster is not the default audio output, execute `list-devices` to get the device ID.
+
+```toml
+[[]]
+id = '{0.0.0.00000000}.{cba07706-3492-4789-bb31-0717e228bd14}'
+interface = 'Sound Blaster Z'
+description = 'Speakers'
+
+[[]]
+id = '{0.0.0.00000000}.{baeaa072-e026-44e1-942e-c466170d9d6f}'
+interface = 'Steam Streaming Microphone'
+description = 'Speakers'
+
+[[]]
+id = '{0.0.0.00000000}.{57e7b4bc-c860-4987-aed3-3ee8dd3617b9}'
+interface = 'Steam Streaming Speakers'
+description = 'Speakers'
+
+[[]]
+id = '{0.0.0.00000000}.{128e193d-e35f-40dd-b414-16105e5ec32d}'
+interface = '2- USB Audio Device'
+description = 'Speakers'
+```
+
+Pass the device ID to other commands: `dump -d "{0.0.0.00000000}.{cba07706-3492-4789-bb31-0717e228bd14}"`.
 
 ### Set
 
