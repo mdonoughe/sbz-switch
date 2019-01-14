@@ -48,6 +48,9 @@ USAGE:
 FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
+
+OPTIONS:
+    -f <FORMAT>        Select the output format [default: toml]  [possible values: toml, json, yaml]
 ```
 
 If the Sound Blaster is not the default audio output, execute `list-devices` to get the device ID.
@@ -119,6 +122,7 @@ FLAGS:
 
 OPTIONS:
     -d, --device <DEVICE_ID>    Specify the device to act on (get id from list-devices)
+    -f <FORMAT>        Select the output format [default: toml]  [possible values: toml, json, yaml]
     -o, --output <FILE>         Saves the current settings to a file
 ```
 

@@ -1,0 +1,7 @@
+creative:
+  Device Control:
+    SelectOutput: 0
+  EfxMasterControl:
+    THXEfx Master OnOff: false
+endpoint:
+  volume: 0.1

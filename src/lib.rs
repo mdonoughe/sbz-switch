@@ -6,12 +6,10 @@
 //!
 //! For an even-lower-level API, see [`mmdeviceapi`](../winapi/um/mmdeviceapi/index.html) and [`ctsndcr`](ctsndcr/index.html).
 
+extern crate indexmap;
 extern crate regex;
 #[macro_use]
-extern crate serde_derive;
-#[macro_use]
 extern crate slog;
-extern crate toml;
 #[macro_use]
 extern crate winapi;
 
@@ -23,15 +21,14 @@ pub mod media;
 pub mod soundcore;
 mod winapiext;
 
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
+
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
 
 use slog::Logger;
-
-use toml::value::{Table, Value};
 
 use media::{DeviceEnumerator, Endpoint};
 use soundcore::{
@@ -45,37 +42,29 @@ compile_error!("This crate must be built for x86 for compatibility with sound dr
     "(build for i686-pc-windows-msvc or suppress this error using feature ctsndcr_ignore_arch)");
 
 /// Describes the configuration of a media endpoint.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct EndpointConfiguration {
     /// The desired volume level, from 0.0 to 1.0
     pub volume: Option<f32>,
 }
 
 /// Describes a configuration to be applied.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct Configuration {
     /// Windows audio endpoint settings
     pub endpoint: Option<EndpointConfiguration>,
     /// Creative SoundBlaster settings
-    pub creative: Option<BTreeMap<String, BTreeMap<String, Value>>>,
-}
-
-fn convert_from_soundcore(value: &SoundCoreParamValue) -> Value {
-    match *value {
-        SoundCoreParamValue::Float(f) => Value::Float(f64::from(f)),
-        SoundCoreParamValue::Bool(b) => Value::Boolean(b),
-        SoundCoreParamValue::U32(u) => Value::Integer(i64::from(u)),
-        SoundCoreParamValue::I32(i) => Value::Integer(i64::from(i)),
-        _ => Value::String("unexpectedly got an unsupported type".to_owned()),
-    }
+    pub creative: Option<IndexMap<String, IndexMap<String, SoundCoreParamValue>>>,
 }
 
 /// Describes a device that may be configurable.
-#[derive(Serialize)]
 pub struct DeviceInfo {
-    id: String,
-    interface: String,
-    description: String,
+    /// Represents the device to Windows.
+    pub id: String,
+    /// Describes the hardware that connects the device to the computer.
+    pub interface: String,
+    /// Describes the audio device.
+    pub description: String,
 }
 
 /// Produces a list of devices currently available.
@@ -121,17 +110,12 @@ fn get_endpoint(logger: Logger, device_id: Option<&OsStr>) -> Result<Endpoint, W
 /// ```
 /// println!("{:?}", dump(logger.clone(), None)?);
 /// ```
-pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Error>> {
-    let mut output = Table::new();
-
+pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Configuration, Box<Error>> {
     let endpoint = get_endpoint(logger.clone(), device_id)?;
 
-    let mut endpoint_output = Table::new();
-    endpoint_output.insert(
-        "volume".to_owned(),
-        Value::Float(f64::from(endpoint.get_volume()?)),
-    );
-    output.insert("endpoint".to_owned(), Value::Table(endpoint_output));
+    let endpoint_output = EndpointConfiguration {
+        volume: Some(endpoint.get_volume()?),
+    };
 
     let id = endpoint.id()?;
     debug!(logger, "Found device {}", id);
@@ -153,12 +137,12 @@ pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Err
     );
     let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
 
-    let mut context_output = Table::new();
+    let mut context_output = IndexMap::new();
     for feature in core.features(0) {
         let feature = feature?;
         debug!(logger, "{:08x} {}", feature.id, feature.description);
 
-        let mut feature_output = Table::new();
+        let mut feature_output = IndexMap::new();
         for parameter in feature.parameters() {
             let parameter = parameter?;
             debug!(logger, "  {} {}", parameter.id, parameter.description);
@@ -175,10 +159,7 @@ pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Err
                         match value {
                             SoundCoreParamValue::None => {}
                             _ => {
-                                feature_output.insert(
-                                    parameter.description.clone(),
-                                    convert_from_soundcore(&value),
-                                );
+                                feature_output.insert(parameter.description.clone(), value);
                             }
                         }
                     }
@@ -191,10 +172,7 @@ pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Err
                         match value {
                             SoundCoreParamValue::None => {}
                             _ => {
-                                feature_output.insert(
-                                    parameter.description.clone(),
-                                    convert_from_soundcore(&value),
-                                );
+                                feature_output.insert(parameter.description.clone(), value);
                             }
                         }
                     }
@@ -207,12 +185,14 @@ pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Table, Box<Err
         }
         // omit feature if no parameters are applicable
         if !feature_output.is_empty() {
-            context_output.insert(feature.description.clone(), Value::Table(feature_output));
+            context_output.insert(feature.description.clone(), feature_output);
         }
     }
-    output.insert("creative".to_owned(), Value::Table(context_output));
 
-    Ok(output)
+    Ok(Configuration {
+        endpoint: Some(endpoint_output),
+        creative: Some(context_output),
+    })
 }
 
 /// Applies a set of configuration values to a device.
@@ -281,8 +261,8 @@ pub fn watch(
 struct UnsupportedValueError {
     feature: String,
     parameter: String,
-    expected: String,
-    actual: String,
+    expected: &'static str,
+    actual: &'static str,
 }
 
 impl fmt::Display for UnsupportedValueError {
@@ -305,34 +285,43 @@ impl Error for UnsupportedValueError {
     }
 }
 
-fn convert_to_soundcore(
+fn coerce_soundcore(
     feature: &SoundCoreFeature,
     parameter: &SoundCoreParameter,
-    value: &Value,
+    value: &SoundCoreParamValue,
 ) -> Result<SoundCoreParamValue, UnsupportedValueError> {
     match (value, parameter.kind) {
-        (&Value::Float(f), 0) => Ok(SoundCoreParamValue::Float(f as f32)),
-        (&Value::Boolean(b), 1) => Ok(SoundCoreParamValue::Bool(b)),
-        (&Value::Integer(i), 2) if 0 <= i => Ok(SoundCoreParamValue::U32(i as u32)),
-        (&Value::Integer(i), 3) => Ok(SoundCoreParamValue::I32(i as i32)),
-        _ => Err(UnsupportedValueError {
-            feature: feature.description.to_owned(),
-            parameter: parameter.description.to_owned(),
-            expected: match parameter.kind {
-                0 => "float",
-                1 => "bool",
-                2 => "uint",
-                3 => "int",
-                _ => "<unsupported>",
-            }.to_owned(),
-            actual: match *value {
-                Value::Float(_) => "float",
-                Value::Boolean(_) => "bool",
-                Value::Integer(i) if i < 0 => "int",
-                Value::Integer(_) => "int|uint",
-                _ => "<unsupported>",
-            }.to_owned(),
-        }),
+        (&SoundCoreParamValue::Float(f), 0) => Ok(SoundCoreParamValue::Float(f)),
+        (&SoundCoreParamValue::U32(i), 0) => Ok(SoundCoreParamValue::Float(i as f32)),
+        (&SoundCoreParamValue::I32(i), 0) => Ok(SoundCoreParamValue::Float(i as f32)),
+        (&SoundCoreParamValue::Bool(b), 1) => Ok(SoundCoreParamValue::Bool(b)),
+        (&SoundCoreParamValue::U32(i), 2) => Ok(SoundCoreParamValue::U32(i)),
+        (&SoundCoreParamValue::I32(i), 2) if 0 <= i => Ok(SoundCoreParamValue::U32(i as u32)),
+        (&SoundCoreParamValue::I32(i), 3) => Ok(SoundCoreParamValue::I32(i)),
+        (&SoundCoreParamValue::U32(i), 3) if i <= i32::max_value() as u32 => {
+            Ok(SoundCoreParamValue::I32(i as i32))
+        }
+        _ => {
+            let actual = match value {
+                &SoundCoreParamValue::Float(_) => "float",
+                &SoundCoreParamValue::Bool(_) => "bool",
+                &SoundCoreParamValue::I32(_) => "int",
+                &SoundCoreParamValue::U32(_) => "uint",
+                &SoundCoreParamValue::None => "<unsupported>",
+            };
+            Err(UnsupportedValueError {
+                feature: feature.description.to_owned(),
+                parameter: parameter.description.to_owned(),
+                expected: match parameter.kind {
+                    0 => "float",
+                    1 => "bool",
+                    2 => "uint",
+                    3 => "int",
+                    _ => "<unsupported>",
+                },
+                actual,
+            })
+        }
     }
 }
 
@@ -388,7 +377,7 @@ fn set_internal(
                     );
                     if let Some(value) = feature_table.get(&parameter.description) {
                         unhandled_parameter_names.remove(&parameter.description[..]);
-                        let value = &convert_to_soundcore(&feature, &parameter, value)?;
+                        let value = &coerce_soundcore(&feature, &parameter, value)?;
                         if let Err(error) = parameter.set(value) {
                             error!(
                                 logger,

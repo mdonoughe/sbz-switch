@@ -10,7 +10,7 @@ use ctsndcr::{ISoundCore, Param, ParamInfo, ParamValue};
 use hresult::{check, Win32Error};
 
 /// Captures the value of a parameter.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum SoundCoreParamValue {
     /// A floating point value
     Float(f32),
