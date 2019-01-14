@@ -211,46 +211,58 @@ impl Error for FormatError {
     }
 }
 
-fn format_configuration(value: &Configuration, matches: &ArgMatches) -> Result<String, FormatError> {
+fn format_configuration(
+    value: &Configuration,
+    matches: &ArgMatches,
+) -> Result<String, FormatError> {
     match matches.value_of("format").unwrap() {
         "toml" => {
-            let value: SerdeConfiguration<BTreeMap<String, BTreeMap<String, Value>>> = SerdeConfiguration {
-                endpoint: value.endpoint.as_ref().map(From::from),
-                creative: value.creative.as_ref().map(|creative| {
-                    creative
-                        .into_iter()
-                        .map(|(feature, params)| {
-                            (
-                                feature.clone(),
-                                params
-                                    .into_iter()
-                                    .map(|(key, value)| (key.clone(), Value::from_param(value)))
-                                    .collect(),
-                            )
-                        })
-                        .collect()
-                }),
-            };
+            let value: SerdeConfiguration<BTreeMap<String, BTreeMap<String, Value>>> =
+                SerdeConfiguration {
+                    endpoint: value.endpoint.as_ref().map(From::from),
+                    creative: value.creative.as_ref().map(|creative| {
+                        creative
+                            .into_iter()
+                            .map(|(feature, params)| {
+                                (
+                                    feature.clone(),
+                                    params
+                                        .into_iter()
+                                        .map(|(key, value)| (key.clone(), Value::from_param(value)))
+                                        .collect(),
+                                )
+                            })
+                            .collect()
+                    }),
+                };
             toml::to_string_pretty(&value).map_err(FormatError::TomlWrite)
         }
         "json" => {
-            let value: SerdeConfiguration<serde_json::Map<String, serde_json::Value>> = SerdeConfiguration {
-                endpoint: value.endpoint.as_ref().map(From::from),
-                creative: value.creative.as_ref().map(|creative| {
-                    creative
-                        .into_iter()
-                        .map(|(feature, params)| {
-                            (
-                                feature.to_string(),
-                                serde_json::Value::Object(params
-                                    .into_iter()
-                                    .map(|(key, value)| (key.to_string(), serde_json::Value::from_param(value)))
-                                    .collect()),
-                            )
-                        })
-                        .collect()
-                }),
-            };
+            let value: SerdeConfiguration<serde_json::Map<String, serde_json::Value>> =
+                SerdeConfiguration {
+                    endpoint: value.endpoint.as_ref().map(From::from),
+                    creative: value.creative.as_ref().map(|creative| {
+                        creative
+                            .into_iter()
+                            .map(|(feature, params)| {
+                                (
+                                    feature.to_string(),
+                                    serde_json::Value::Object(
+                                        params
+                                            .into_iter()
+                                            .map(|(key, value)| {
+                                                (
+                                                    key.to_string(),
+                                                    serde_json::Value::from_param(value),
+                                                )
+                                            })
+                                            .collect(),
+                                    ),
+                                )
+                            })
+                            .collect()
+                    }),
+                };
             serde_json::to_string_pretty(&value).map_err(FormatError::Json)
         }
         "yaml" => {
@@ -262,10 +274,17 @@ fn format_configuration(value: &Configuration, matches: &ArgMatches) -> Result<S
                         .map(|(feature, params)| {
                             (
                                 serde_yaml::Value::String(feature.to_string()),
-                                serde_yaml::Value::Mapping(params
-                                    .into_iter()
-                                    .map(|(key, value)| (serde_yaml::Value::String(String::from(key.to_string())), serde_yaml::Value::from_param(value)))
-                                    .collect()),
+                                serde_yaml::Value::Mapping(
+                                    params
+                                        .into_iter()
+                                        .map(|(key, value)| {
+                                            (
+                                                serde_yaml::Value::String(key.to_string()),
+                                                serde_yaml::Value::from_param(value),
+                                            )
+                                        })
+                                        .collect(),
+                                ),
                             )
                         })
                         .collect()
@@ -277,7 +296,9 @@ fn format_configuration(value: &Configuration, matches: &ArgMatches) -> Result<S
     }
 }
 
-fn jobject_into_map(value: serde_json::Value) -> Result<serde_json::Map<String, serde_json::Value>, ()> {
+fn jobject_into_map(
+    value: serde_json::Value,
+) -> Result<serde_json::Map<String, serde_json::Value>, ()> {
     match value {
         serde_json::Value::Object(o) => Ok(o),
         _ => Err(()),
@@ -309,72 +330,108 @@ fn transpose<T, E>(value: Option<Result<T, E>>) -> Result<Option<T>, E> {
 fn unformat_configuration(value: &str, matches: &ArgMatches) -> Result<Configuration, FormatError> {
     Ok(match matches.value_of("format").unwrap() {
         "toml" => {
-            let value: SerdeConfiguration<BTreeMap<String, BTreeMap<String, Value>>> = toml::from_str(&value).map_err(FormatError::TomlRead)?;
+            let value: SerdeConfiguration<BTreeMap<String, BTreeMap<String, Value>>> =
+                toml::from_str(&value).map_err(FormatError::TomlRead)?;
             Configuration {
                 endpoint: value.endpoint.map(Into::into),
-                creative: transpose(value.creative.map(|creative| Ok({
-                    creative
-                        .into_iter()
-                        .map(|(feature, params)| Ok({
-                            (
-                                feature,
-                                params
-                                    .into_iter()
-                                    .map(|(key, value)| Ok((key, Value::try_into_param(value).map_err(FormatError::ValueError)?)))
-                                    .collect::<Result<_, _>>()?,
-                            )
-                        }))
-                        .collect::<Result<_, _>>()?
-                })))?,
+                creative: transpose(value.creative.map(|creative| {
+                    Ok({
+                        creative
+                            .into_iter()
+                            .map(|(feature, params)| {
+                                Ok({
+                                    (
+                                        feature,
+                                        params
+                                            .into_iter()
+                                            .map(|(key, value)| {
+                                                Ok((
+                                                    key,
+                                                    Value::try_into_param(value)
+                                                        .map_err(FormatError::ValueError)?,
+                                                ))
+                                            })
+                                            .collect::<Result<_, _>>()?,
+                                    )
+                                })
+                            })
+                            .collect::<Result<_, _>>()?
+                    })
+                }))?,
             }
         }
         "json" => {
-            let value: SerdeConfiguration<serde_json::Map<String, serde_json::Value>> = serde_json::from_str(&value).map_err(FormatError::Json)?;
+            let value: SerdeConfiguration<serde_json::Map<String, serde_json::Value>> =
+                serde_json::from_str(&value).map_err(FormatError::Json)?;
             Configuration {
                 endpoint: value.endpoint.map(Into::into),
-                creative: transpose(value.creative.map(|creative| Ok({
-                    creative
-                        .into_iter()
-                        .map(|(feature, params)| Ok({
-                            let params = match jobject_into_map(params) {
-                                Ok(params) => params,
-                                Err(_) => return Err(FormatError::ExpectedObject(feature)),
-                            };
-                            (
-                                feature,
-                                params
-                                    .into_iter()
-                                    .map(|(key, value)| Ok((key, serde_json::Value::try_into_param(value).map_err(FormatError::ValueError)?)))
-                                    .collect::<Result<_, _>>()?,
-                            )
-                        }))
-                        .collect::<Result<_, _>>()?
-                })))?,
+                creative: transpose(value.creative.map(|creative| {
+                    Ok({
+                        creative
+                            .into_iter()
+                            .map(|(feature, params)| {
+                                Ok({
+                                    let params = match jobject_into_map(params) {
+                                        Ok(params) => params,
+                                        Err(_) => return Err(FormatError::ExpectedObject(feature)),
+                                    };
+                                    (
+                                        feature,
+                                        params
+                                            .into_iter()
+                                            .map(|(key, value)| {
+                                                Ok((
+                                                    key,
+                                                    serde_json::Value::try_into_param(value)
+                                                        .map_err(FormatError::ValueError)?,
+                                                ))
+                                            })
+                                            .collect::<Result<_, _>>()?,
+                                    )
+                                })
+                            })
+                            .collect::<Result<_, _>>()?
+                    })
+                }))?,
             }
         }
         "yaml" => {
-            let value: SerdeConfiguration<serde_yaml::Mapping> = serde_yaml::from_str(&value).map_err(FormatError::Yaml)?;
+            let value: SerdeConfiguration<serde_yaml::Mapping> =
+                serde_yaml::from_str(&value).map_err(FormatError::Yaml)?;
             Configuration {
                 endpoint: value.endpoint.map(Into::into),
-                creative: transpose(value.creative.map(|creative| Ok({
-                    creative
-                        .into_iter()
-                        .map(|(feature, params)| Ok({
-                            let feature = ystring_into_string(feature).expect("yaml property name was not a string");
-                            let params = match yobject_into_map(params) {
-                                Ok(params) => params,
-                                Err(_) => return Err(FormatError::ExpectedObject(feature)),
-                            };
-                            (
-                                feature,
-                                params
-                                    .into_iter()
-                                    .map(|(key, value)| Ok((ystring_into_string(key).expect("yaml property name was not a string"), serde_yaml::Value::try_into_param(value).map_err(FormatError::ValueError)?)))
-                                    .collect::<Result<_, _>>()?,
-                            )
-                        }))
-                        .collect::<Result<_, _>>()?
-                })))?,
+                creative: transpose(value.creative.map(|creative| {
+                    Ok({
+                        creative
+                            .into_iter()
+                            .map(|(feature, params)| {
+                                Ok({
+                                    let feature = ystring_into_string(feature)
+                                        .expect("yaml property name was not a string");
+                                    let params = match yobject_into_map(params) {
+                                        Ok(params) => params,
+                                        Err(_) => return Err(FormatError::ExpectedObject(feature)),
+                                    };
+                                    (
+                                        feature,
+                                        params
+                                            .into_iter()
+                                            .map(|(key, value)| {
+                                                Ok((
+                                                    ystring_into_string(key).expect(
+                                                        "yaml property name was not a string",
+                                                    ),
+                                                    serde_yaml::Value::try_into_param(value)
+                                                        .map_err(FormatError::ValueError)?,
+                                                ))
+                                            })
+                                            .collect::<Result<_, _>>()?,
+                                    )
+                                })
+                            })
+                            .collect::<Result<_, _>>()?
+                    })
+                }))?,
             }
         }
         _ => unreachable!(),
@@ -418,10 +475,12 @@ impl ParamConvert for toml::Value {
         match value {
             Value::Float(f) => Ok(SoundCoreParamValue::Float(f as f32)),
             Value::Boolean(b) => Ok(SoundCoreParamValue::Bool(b)),
-            Value::Integer(i) if i < i32::min_value() as i64 || (u32::max_value() as i64) < i => {
+            Value::Integer(i)
+                if i < i64::from(i32::min_value()) || i64::from(u32::max_value()) < i =>
+            {
                 Err("Large integer")
             }
-            Value::Integer(i) if i32::max_value() as i64 <= i => {
+            Value::Integer(i) if i64::from(i32::max_value()) <= i => {
                 Ok(SoundCoreParamValue::U32(i as u32))
             }
             Value::Integer(i) => Ok(SoundCoreParamValue::I32(i as i32)),
@@ -435,8 +494,8 @@ impl ParamConvert for toml::Value {
         match value {
             SoundCoreParamValue::Float(f) => Value::Float((*f).into()),
             SoundCoreParamValue::Bool(b) => Value::Boolean(*b),
-            SoundCoreParamValue::U32(i) => Value::Integer(*i as i64),
-            SoundCoreParamValue::I32(i) => Value::Integer(*i as i64),
+            SoundCoreParamValue::U32(i) => Value::Integer(i64::from(*i)),
+            SoundCoreParamValue::I32(i) => Value::Integer(i64::from(*i)),
             _ => Value::String("<unsupported>".to_string()),
         }
     }
@@ -446,9 +505,13 @@ impl ParamConvert for serde_json::Value {
     fn try_into_param(value: Self) -> Result<SoundCoreParamValue, &'static str> {
         match value {
             serde_json::Value::Number(n) => match n.as_i64() {
-                Some(n) if n < i32::min_value() as i64 => Err("Large integer"),
-                Some(n) if n <= i32::max_value() as i64 => Ok(SoundCoreParamValue::I32(n as i32)),
-                Some(n) if n <= u32::max_value() as i64 => Ok(SoundCoreParamValue::U32(n as u32)),
+                Some(n) if n < i64::from(i32::min_value()) => Err("Large integer"),
+                Some(n) if n <= i64::from(i32::max_value()) => {
+                    Ok(SoundCoreParamValue::I32(n as i32))
+                }
+                Some(n) if n <= i64::from(u32::max_value()) => {
+                    Ok(SoundCoreParamValue::U32(n as u32))
+                }
                 Some(_) => Err("Large integer"),
                 None => Ok(SoundCoreParamValue::Float(n.as_f64().unwrap() as f32)),
             },
@@ -474,9 +537,13 @@ impl ParamConvert for serde_yaml::Value {
     fn try_into_param(value: Self) -> Result<SoundCoreParamValue, &'static str> {
         match value {
             serde_yaml::Value::Number(n) => match n.as_i64() {
-                Some(n) if n < i32::min_value() as i64 => Err("Large integer"),
-                Some(n) if n <= i32::max_value() as i64 => Ok(SoundCoreParamValue::I32(n as i32)),
-                Some(n) if n <= u32::max_value() as i64 => Ok(SoundCoreParamValue::U32(n as u32)),
+                Some(n) if n < i64::from(i32::min_value()) => Err("Large integer"),
+                Some(n) if n <= i64::from(i32::max_value()) => {
+                    Ok(SoundCoreParamValue::I32(n as i32))
+                }
+                Some(n) if n <= i64::from(u32::max_value()) => {
+                    Ok(SoundCoreParamValue::U32(n as u32))
+                }
                 Some(_) => Err("Large integer"),
                 None => Ok(SoundCoreParamValue::Float(n.as_f64().unwrap() as f32)),
             },
@@ -516,17 +583,14 @@ impl From<DeviceInfo> for SerializableDeviceInfo {
 }
 
 fn list_devices(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
-    let devices: Vec<_> = sbz_switch::list_devices(logger)?.into_iter().map(SerializableDeviceInfo::from).collect();
+    let devices: Vec<_> = sbz_switch::list_devices(logger)?
+        .into_iter()
+        .map(SerializableDeviceInfo::from)
+        .collect();
     let text = match matches.value_of("format").unwrap() {
-        "toml" => {
-            toml::to_string_pretty(&devices).map_err(FormatError::TomlWrite)?
-        }
-        "json" => {
-            serde_json::to_string_pretty(&devices).map_err(FormatError::Json)?
-        }
-        "yaml" => {
-            serde_yaml::to_string(&devices).map_err(FormatError::Yaml)?
-        }
+        "toml" => toml::to_string_pretty(&devices).map_err(FormatError::TomlWrite)?,
+        "json" => serde_json::to_string_pretty(&devices).map_err(FormatError::Json)?,
+        "yaml" => serde_yaml::to_string(&devices).map_err(FormatError::Yaml)?,
         _ => unreachable!(),
     };
     print!("{}", text);
@@ -550,7 +614,7 @@ fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
         Some(name) => BufReader::new(File::open(name)?).read_to_string(&mut text)?,
         None => io::stdin().read_to_string(&mut text)?,
     };
-    
+
     let configuration: Configuration = unformat_configuration(&text, matches)?;
     mem::drop(text);
 

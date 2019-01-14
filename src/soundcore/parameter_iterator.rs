@@ -4,11 +4,11 @@ use slog::Logger;
 
 use winapi::shared::winerror::E_FAIL;
 
-use com::ComObject;
-use ctsndcr::{ISoundCore, ParamInfo};
-use hresult::{check, Win32Error};
+use crate::com::ComObject;
+use crate::ctsndcr::{ISoundCore, ParamInfo};
+use crate::hresult::{check, Win32Error};
 
-use SoundCoreParameter;
+use crate::SoundCoreParameter;
 
 /// Iterates over the parameters of a feature.
 pub struct SoundCoreParameterIterator {

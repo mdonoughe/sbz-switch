@@ -5,9 +5,9 @@ use slog::Logger;
 
 use winapi::shared::winerror::E_ACCESSDENIED;
 
-use com::ComObject;
-use ctsndcr::{ISoundCore, Param, ParamInfo, ParamValue};
-use hresult::{check, Win32Error};
+use crate::com::ComObject;
+use crate::ctsndcr::{ISoundCore, Param, ParamInfo, ParamValue};
+use crate::hresult::{check, Win32Error};
 
 /// Captures the value of a parameter.
 #[derive(Clone, Copy, Debug)]
@@ -153,11 +153,13 @@ impl SoundCoreParameter {
                 },
                 value: match *value {
                     SoundCoreParamValue::Float(f) => mem::transmute(f),
-                    SoundCoreParamValue::Bool(b) => if b {
-                        0xffff_ffff
-                    } else {
-                        0
-                    },
+                    SoundCoreParamValue::Bool(b) => {
+                        if b {
+                            0xffff_ffff
+                        } else {
+                            0
+                        }
+                    }
                     SoundCoreParamValue::U32(u) => u,
                     SoundCoreParamValue::I32(i) => mem::transmute(i),
                     _ => panic!("tried to set parameter with nothing"),

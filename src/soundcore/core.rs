@@ -9,9 +9,9 @@ use winapi::shared::guiddef::GUID;
 use winapi::um::combaseapi::{CoCreateInstance, CLSCTX_ALL};
 use winapi::Interface;
 
-use com::{ComObject, ComScope};
-use ctsndcr::{HardwareInfo, ICallback, IEventNotify, ISoundCore};
-use hresult::{check, Win32Error};
+use crate::com::{ComObject, ComScope};
+use crate::ctsndcr::{HardwareInfo, ICallback, IEventNotify, ISoundCore};
+use crate::hresult::{check, Win32Error};
 
 use super::event::event_iterator;
 use super::{SoundCoreError, SoundCoreEventIterator, SoundCoreFeatureIterator};
@@ -37,11 +37,12 @@ impl SoundCore {
         device_id: &str,
         logger: Logger,
     ) -> Result<SoundCore, SoundCoreError> {
-        let _scope = ComScope::new();
+        let _scope = ComScope::begin();
         let mut core = SoundCore::new(clsid, logger)?;
         core.bind_hardware(device_id)?;
         Ok(core)
     }
+    #[allow(clippy::new_ret_no_self)]
     fn new(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
         unsafe {
             let mut sc: *mut ISoundCore = mem::uninitialized();

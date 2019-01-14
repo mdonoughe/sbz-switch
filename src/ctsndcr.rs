@@ -6,9 +6,9 @@
 #![allow(missing_docs)]
 #![allow(non_snake_case)]
 #![allow(unknown_lints)]
-#![allow(unreadable_literal)]
+#![allow(clippy::clippy::unreadable_literal)]
 
-use hresult::Win32Error;
+use crate::hresult::Win32Error;
 use std::alloc;
 use std::ptr;
 use std::sync::atomic::{self, AtomicUsize, Ordering};
@@ -20,7 +20,7 @@ use winapi::shared::winerror::{E_INVALIDARG, E_NOINTERFACE};
 use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
 use winapi::Interface;
 
-RIDL!{#[uuid(0x6111e7c4, 0x3ea4, 0x47ed, 0xb0, 0x74, 0xc6, 0x38, 0x87, 0x52, 0x82, 0xc4)]
+RIDL! {#[uuid(0x6111e7c4, 0x3ea4, 0x47ed, 0xb0, 0x74, 0xc6, 0x38, 0x87, 0x52, 0x82, 0xc4)]
 interface ISoundCore(ISoundCoreVtbl): IUnknown(IUnknownVtbl) {
     fn BindHardware(
         hardware_info: *const HardwareInfo,
@@ -145,7 +145,7 @@ pub struct ParamInfo {
     pub description: [u8; 32],
 }
 
-RIDL!{#[uuid(0xf6cb394a, 0xa680, 0x45c0, 0xac, 0xd2, 0xf0, 0x59, 0x56, 0x26, 0xa3, 0xfd)]
+RIDL! {#[uuid(0xf6cb394a, 0xa680, 0x45c0, 0xac, 0xd2, 0xf0, 0x59, 0x56, 0x26, 0xa3, 0xfd)]
 interface IEventNotify(IEventNotifyVtbl): IUnknown(IUnknownVtbl) {
     fn RegisterEventCallback(
         eventMask: u32,
@@ -154,7 +154,7 @@ interface IEventNotify(IEventNotifyVtbl): IUnknown(IUnknownVtbl) {
     fn UnregisterEventCallback() -> HRESULT,
 }}
 
-RIDL!{#[uuid(0xb353c442, 0xc49d, 0x4532, 0x9e, 0x3a, 0x1b, 0x20, 0xa1, 0x82, 0xfd, 0x00)]
+RIDL! {#[uuid(0xb353c442, 0xc49d, 0x4532, 0x9e, 0x3a, 0x1b, 0x20, 0xa1, 0x82, 0xfd, 0x00)]
 interface ICallback(ICallbackVtbl): IUnknown(IUnknownVtbl) {
     fn EventCallback(
         eventInfo: EventInfo,
@@ -187,6 +187,7 @@ impl ICallback {
     /// `IEventNotify` allows a single `ICallback` instance to be registered
     /// for event notifications, but implementing `ICallback` requires a lot
     /// of COM glue that we shouldn't need to worry about.
+    #[allow(clippy::new_ret_no_self)]
     pub unsafe fn new<C>(callback: C) -> *mut Self
     where
         C: Send + 'static + FnMut(&EventInfo) -> Result<(), Win32Error>,

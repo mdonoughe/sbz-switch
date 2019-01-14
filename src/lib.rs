@@ -30,12 +30,12 @@ use std::fmt;
 
 use slog::Logger;
 
-use media::{DeviceEnumerator, Endpoint};
-use soundcore::{
+use crate::media::{DeviceEnumerator, Endpoint};
+use crate::soundcore::{
     SoundCore, SoundCoreEventIterator, SoundCoreFeature, SoundCoreParamValue, SoundCoreParameter,
 };
 
-pub use hresult::Win32Error;
+pub use crate::hresult::Win32Error;
 
 #[cfg(not(any(target_arch = "x86", feature = "ctsndcr_ignore_arch")))]
 compile_error!("This crate must be built for x86 for compatibility with sound drivers." +
@@ -302,12 +302,12 @@ fn coerce_soundcore(
             Ok(SoundCoreParamValue::I32(i as i32))
         }
         _ => {
-            let actual = match value {
-                &SoundCoreParamValue::Float(_) => "float",
-                &SoundCoreParamValue::Bool(_) => "bool",
-                &SoundCoreParamValue::I32(_) => "int",
-                &SoundCoreParamValue::U32(_) => "uint",
-                &SoundCoreParamValue::None => "<unsupported>",
+            let actual = match *value {
+                SoundCoreParamValue::Float(_) => "float",
+                SoundCoreParamValue::Bool(_) => "bool",
+                SoundCoreParamValue::I32(_) => "int",
+                SoundCoreParamValue::U32(_) => "uint",
+                SoundCoreParamValue::None => "<unsupported>",
             };
             Err(UnsupportedValueError {
                 feature: feature.description.to_owned(),

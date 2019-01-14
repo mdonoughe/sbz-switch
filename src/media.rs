@@ -28,11 +28,11 @@ use winapi::um::propidl::PROPVARIANT;
 use winapi::um::propsys::IPropertyStore;
 use winapi::Interface;
 
-use com::{ComObject, ComScope};
-use hresult::{check, Win32Error};
-use lazy::Lazy;
-use soundcore::{SoundCoreError, PKEY_SOUNDCORECTL_CLSID};
-use winapiext::{PKEY_DeviceInterface_FriendlyName, PKEY_Device_DeviceDesc};
+use crate::com::{ComObject, ComScope};
+use crate::hresult::{check, Win32Error};
+use crate::lazy::Lazy;
+use crate::soundcore::{SoundCoreError, PKEY_SOUNDCORECTL_CLSID};
+use crate::winapiext::{PKEY_DeviceInterface_FriendlyName, PKEY_Device_DeviceDesc};
 
 fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
     let re1 = Regex::new(
@@ -40,19 +40,22 @@ fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
          ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
          ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
          ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\\}$",
-    ).unwrap();
+    )
+    .unwrap();
     let re2 = Regex::new(
         "^([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-\
          ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
          ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
          ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
-    ).unwrap();
+    )
+    .unwrap();
     let re3 = Regex::new(
         "^([0-9a-fA-F]{8})([0-9a-fA-F]{4})\
          ([0-9a-fA-F]{4})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
          ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})\
          ([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$",
-    ).unwrap();
+    )
+    .unwrap();
 
     let caps = re1
         .captures(src)
@@ -264,7 +267,7 @@ impl PropertyStore {
         check(self.0.GetValue(key, &mut property_value))?;
         Ok(property_value)
     }
-    #[allow(cast_ptr_alignment)]
+    #[allow(clippy::cast_ptr_alignment)]
     fn get_string_value(&self, key: &PROPERTYKEY) -> Result<String, GetPropertyError> {
         unsafe {
             let mut property_value = self.get_value(key)?;
@@ -297,7 +300,7 @@ impl DeviceEnumerator {
     /// Creates a new device enumerator with the provided logger.
     pub fn with_logger(logger: Logger) -> Result<Self, Win32Error> {
         unsafe {
-            let _scope = ComScope::new();
+            let _scope = ComScope::begin();
             let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
             trace!(logger, "Creating DeviceEnumerator...");
             check(CoCreateInstance(
@@ -312,7 +315,7 @@ impl DeviceEnumerator {
         }
     }
     /// Gets all active audio outputs.
-    #[allow(unnecessary_mut_passed)]
+    #[allow(clippy::unnecessary_mut_passed)]
     pub fn get_active_audio_endpoints(&self) -> Result<Vec<Endpoint>, Win32Error> {
         unsafe {
             trace!(self.1, "Getting active endpoints...");

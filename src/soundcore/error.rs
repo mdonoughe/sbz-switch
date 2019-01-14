@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use hresult::Win32Error;
+use crate::hresult::Win32Error;
 
 /// Describes an error that occurred while acting on Creative's SoundCore API.
 #[derive(Debug)]

@@ -2,8 +2,8 @@ use std::str;
 
 use slog::Logger;
 
-use com::ComObject;
-use ctsndcr::{FeatureInfo, ISoundCore};
+use crate::com::ComObject;
+use crate::ctsndcr::{FeatureInfo, ISoundCore};
 
 use super::SoundCoreParameterIterator;
 

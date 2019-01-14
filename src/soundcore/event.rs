@@ -17,9 +17,9 @@ use winapi::um::synchapi::{
 };
 use winapi::um::winbase::INFINITE;
 
-use com::ComObject;
-use ctsndcr::{EventInfo, IEventNotify, ISoundCore, Param};
-use hresult::{check, Win32Error};
+use crate::com::ComObject;
+use crate::ctsndcr::{EventInfo, IEventNotify, ISoundCore, Param};
+use crate::hresult::{check, Win32Error};
 
 use super::{SoundCoreFeature, SoundCoreParameter};
 
@@ -126,7 +126,8 @@ impl Iterator for SoundCoreEventIterator {
                             0,
                             result.data_or_feature_id,
                             &mut feature,
-                        )).map(|_| feature);
+                        ))
+                        .map(|_| feature);
                         match feature {
                             Ok(feature) => {
                                 let feature = SoundCoreFeature::new(
@@ -143,7 +144,8 @@ impl Iterator for SoundCoreEventIterator {
                                         context: 0,
                                     },
                                     &mut param,
-                                )).map(|_| param);
+                                ))
+                                .map(|_| param);
                                 match param {
                                     Ok(param) => {
                                         let param = SoundCoreParameter::new(

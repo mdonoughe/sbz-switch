@@ -6,7 +6,7 @@ use winapi::um::combaseapi::{CoInitializeEx, CoUninitialize};
 use winapi::um::objbase::COINIT_APARTMENTTHREADED;
 use winapi::um::unknwnbase::IUnknown;
 
-use hresult::{check, Win32Error};
+use crate::hresult::{check, Win32Error};
 
 /// Prepares the current thread for running COM by calling CoInitializeEx.
 ///
@@ -37,7 +37,7 @@ pub fn uninitialize_com() {
 pub(crate) struct ComScope {}
 
 impl ComScope {
-    pub fn new() -> Result<Self, Win32Error> {
+    pub fn begin() -> Result<Self, Win32Error> {
         initialize_com()?;
         Ok(Self {})
     }
@@ -64,7 +64,7 @@ where
     pub unsafe fn take(inner: *mut T) -> Self {
         Self {
             inner: NonNull::new(inner).unwrap(),
-            _scope: ComScope::new().unwrap(),
+            _scope: ComScope::begin().unwrap(),
         }
     }
 }
@@ -85,7 +85,7 @@ where
     T: Deref<Target = IUnknown>,
 {
     fn clone(&self) -> Self {
-        let scope = ComScope::new().unwrap();
+        let scope = ComScope::begin().unwrap();
         unsafe {
             self.inner.as_ref().AddRef();
         }

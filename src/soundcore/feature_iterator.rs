@@ -4,11 +4,11 @@ use slog::Logger;
 
 use winapi::shared::winerror::E_FAIL;
 
-use com::ComObject;
-use ctsndcr::{FeatureInfo, ISoundCore};
-use hresult::{check, Win32Error};
+use crate::com::ComObject;
+use crate::ctsndcr::{FeatureInfo, ISoundCore};
+use crate::hresult::{check, Win32Error};
 
-use SoundCoreFeature;
+use crate::SoundCoreFeature;
 
 /// Iterates over features of a device.
 pub struct SoundCoreFeatureIterator {
