@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.0.0] - 2019-01-14
+
+This release unfortunately renames the `-f` command line parameter to `-i` to allow for a new `-f` to specify the file format.
+
 ### Added
 - The `watch` command dumps out a stream of events such as parameters changing, even if those changes are made from another program.
 - Output can be written in json or yaml format in addition to toml.
@@ -35,7 +40,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - Command to switch speaker configuration and adjust volume.
 
-[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v3.0.0...HEAD
+[2.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v0.1.0...v1.0.0
