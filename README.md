@@ -210,4 +210,4 @@ There may be a pop during the switch, or applications outputting audio may get c
 
 Some parameters are only valid if another parameter has been set or when using certain hardware, e.g. 7.1 surround sound speaker configuration. Unfortunately, these parameters will be included in a full parameter dump and may lead to errors when reapplying the settings later. It should be generally safe to ignore such errors, but they can be avoided by removing the offending settings from the dump file.
 
-Order matters when setting parameters. Not only does this program make no attempt to order the parameters correctly itself, but it does not honor the order of parameters provided in a dump file or passed from the command line. It may be necessary to apply settings more than once if they do not apply correctly the first time.
+Order matters when setting parameters. This program make no attempt to order the parameters correctly itself. Additionally, toml files are read using [toml](https://crates.io/crates/toml) 0.4 which does not maintain the order of parameters.
