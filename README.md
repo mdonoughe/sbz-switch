@@ -124,7 +124,7 @@ FLAGS:
 
 OPTIONS:
     -d, --device <DEVICE_ID>    Specify the device to act on (get id from list-devices)
-    -f <FORMAT>        Select the output format [default: toml]  [possible values: toml, json, yaml]
+    -f <FORMAT>                 Select the output format [default: toml]  [possible values: toml, json, yaml]
     -o, --output <FILE>         Saves the current settings to a file
 ```
 
@@ -152,15 +152,16 @@ FLAGS:
 
 OPTIONS:
     -d, --device <DEVICE_ID>    Specify the device to act on (get id from list-devices)
-    -f <FILE>                   Reads the settings from a file instead of stdin
+    -i <FILE>                   Reads the settings from a file instead of stdin
+    -f <FORMAT>                 Select the input format [default: toml]  [possible values: toml, json, yaml]
     -m <true|false>             Temporarily mutes while changing parameters [default: true]
 ```
 
 Apply the previously saved headphones.toml file:
 
-    sbz-switch apply -f headphones.toml
+    sbz-switch apply -i headphones.toml
 
-Omitting the `-f` parameter will cause sbz-switch to read settings from stdin.
+Omitting the `-i` parameter will cause sbz-switch to read settings from stdin.
 
 Partial dumps are acceptable (and recommended) input for the apply command, in which case the other parameters are left as is. This means it's possible to use a small toml files like these:
 
