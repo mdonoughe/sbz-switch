@@ -41,7 +41,7 @@ This release unfortunately renames the `-f` command line parameter to `-i` to al
 - Command to switch speaker configuration and adjust volume.
 
 [Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v3.0.0...HEAD
-[2.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v2.0.0...v3.0.0
+[3.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v0.1.0...v1.0.0
