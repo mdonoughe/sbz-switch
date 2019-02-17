@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+- There is now a `watch_with_volume` method on the API which allows API users to observe both changes to SoundBlaster settings and changes to the Windows volume settings at the same time without needing to run two threads.
+
+### Changed
+- The output of the `watch` command is now different due to using the `watch_with_volume` API.
+
 ## [3.0.0] - 2019-01-14
 
 This release unfortunately renames the `-f` command line parameter to `-i` to allow for a new `-f` to specify the file format.

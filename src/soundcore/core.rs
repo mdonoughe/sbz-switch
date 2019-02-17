@@ -90,17 +90,21 @@ impl SoundCore {
     /// multiple event handlers and then unregistering only one of them. Probably
     /// this is okay if done with multiple `SoundCore` instances.
     pub fn events(&self) -> Result<SoundCoreEventIterator, Win32Error> {
+        Ok(SoundCoreEventIterator::new(self.event_stream()?))
+    }
+
+    pub(crate) fn event_stream(&self) -> Result<SoundCoreEvents, Win32Error> {
         unsafe {
             let mut event_notify: *mut IEventNotify = mem::uninitialized();
             check(self.sound_core.QueryInterface(
                 &IEventNotify::uuidof(),
                 &mut event_notify as *mut *mut _ as *mut _,
             ))?;
-            Ok(SoundCoreEventIterator::new(SoundCoreEvents::new(
+            Ok(SoundCoreEvents::new(
                 ComObject::take(event_notify),
                 self.sound_core.clone(),
                 self.logger.clone(),
-            )?))
+            )?)
         }
     }
 }

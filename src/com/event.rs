@@ -1,8 +1,8 @@
-use futures::{Async, Stream};
 use futures::executor::{self, Notify, NotifyHandle, Spawn};
+use futures::{Async, Stream};
 
-use std::ptr;
 use std::mem;
+use std::ptr;
 use std::sync::{Arc, Mutex};
 
 use winapi::um::combaseapi::{CoWaitForMultipleObjects, CWMO_DISPATCH_CALLS};
@@ -10,7 +10,7 @@ use winapi::um::handleapi::CloseHandle;
 use winapi::um::synchapi::{CreateEventW, SetEvent};
 use winapi::um::winbase::INFINITE;
 
-use crate::hresult::{check};
+use crate::hresult::check;
 
 struct ComUnparkState {
     handles: Vec<usize>,
@@ -119,7 +119,10 @@ pub struct ComEventIterator<S> {
     inner: Spawn<S>,
 }
 
-impl<S, I, E> ComEventIterator<S> where S: Stream<Item = I, Error = E> {
+impl<S, I, E> ComEventIterator<S>
+where
+    S: Stream<Item = I, Error = E>,
+{
     pub fn new(stream: S) -> Self {
         let park = ComUnpark::new();
         let id = park.allocate_id();
@@ -131,7 +134,10 @@ impl<S, I, E> ComEventIterator<S> where S: Stream<Item = I, Error = E> {
     }
 }
 
-impl<S, I, E> Iterator for ComEventIterator<S> where S: Stream<Item = I, Error = E> {
+impl<S, I, E> Iterator for ComEventIterator<S>
+where
+    S: Stream<Item = I, Error = E>,
+{
     type Item = Result<I, E>;
 
     fn next(&mut self) -> Option<Self::Item> {

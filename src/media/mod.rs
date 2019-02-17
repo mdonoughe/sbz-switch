@@ -2,6 +2,9 @@
 
 #![allow(unknown_lints)]
 
+mod event;
+
+use std::alloc;
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -10,24 +13,36 @@ use std::mem;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
 use std::slice;
+use std::sync::atomic::{self, AtomicUsize, Ordering};
 
 use regex::Regex;
 use slog::Logger;
+use winapi::ctypes::c_void;
 use winapi::shared::guiddef::GUID;
+use winapi::shared::guiddef::{IsEqualIID, REFIID};
+use winapi::shared::minwindef::ULONG;
+use winapi::shared::ntdef::HRESULT;
 use winapi::shared::winerror::NTE_NOT_FOUND;
+use winapi::shared::winerror::{E_INVALIDARG, E_NOINTERFACE};
 use winapi::shared::wtypes::{PROPERTYKEY, VARTYPE};
 use winapi::um::combaseapi::CLSCTX_ALL;
 use winapi::um::combaseapi::{CoCreateInstance, CoTaskMemFree, PropVariantClear};
 use winapi::um::coml2api::STGM_READ;
-use winapi::um::endpointvolume::IAudioEndpointVolume;
+use winapi::um::endpointvolume::{
+    IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallbackVtbl,
+    AUDIO_VOLUME_NOTIFICATION_DATA,
+};
 use winapi::um::mmdeviceapi::{
     eConsole, eRender, CLSID_MMDeviceEnumerator, IMMDevice, IMMDeviceEnumerator,
     DEVICE_STATE_ACTIVE,
 };
 use winapi::um::propidl::PROPVARIANT;
 use winapi::um::propsys::IPropertyStore;
+use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
 use winapi::Interface;
 
+pub(crate) use self::event::VolumeEvents;
+pub use self::event::VolumeNotification;
 use crate::com::{ComObject, ComScope};
 use crate::hresult::{check, Win32Error};
 use crate::lazy::Lazy;
@@ -221,6 +236,9 @@ impl Endpoint {
             Ok(volume)
         }
     }
+    pub(crate) fn event_stream(&self) -> Result<VolumeEvents, Win32Error> {
+        Ok(VolumeEvents::new(self.volume()?)?)
+    }
 }
 
 /// Describes an error that occurred while retrieving a property from a device.
@@ -361,4 +379,126 @@ impl DeviceEnumerator {
             Ok(Endpoint::new(ComObject::take(device), self.1.clone()))
         }
     }
+}
+
+#[repr(C)]
+struct AudioEndpointVolumeCallback<C> {
+    lp_vtbl: *mut IAudioEndpointVolumeCallbackVtbl,
+    vtbl: IAudioEndpointVolumeCallbackVtbl,
+    refs: AtomicUsize,
+    callback: C,
+}
+
+impl<C> AudioEndpointVolumeCallback<C>
+where
+    C: Send + 'static + FnMut(&AUDIO_VOLUME_NOTIFICATION_DATA) -> Result<(), Win32Error>,
+{
+    /// Wraps a function in an `IAudioEndpointVolumeCallback`.
+    pub unsafe fn wrap(callback: C) -> *mut IAudioEndpointVolumeCallback {
+        let mut value = Box::new(AudioEndpointVolumeCallback::<C> {
+            lp_vtbl: ptr::null_mut(),
+            vtbl: IAudioEndpointVolumeCallbackVtbl {
+                parent: IUnknownVtbl {
+                    QueryInterface: callback_query_interface::<C>,
+                    AddRef: callback_add_ref::<C>,
+                    Release: callback_release::<C>,
+                },
+                OnNotify: callback_on_notify::<C>,
+            },
+            refs: AtomicUsize::new(1),
+            callback,
+        });
+        value.lp_vtbl = &mut value.vtbl as *mut _;
+        Box::into_raw(value) as *mut _
+    }
+}
+
+// ensures `this` is an instance of the expected type
+unsafe fn validate<I, C>(this: *mut I) -> Result<*mut AudioEndpointVolumeCallback<C>, Win32Error>
+where
+    I: Interface,
+{
+    let this = this as *mut IUnknown;
+    if this.is_null()
+        || (*this).lpVtbl.is_null()
+        || (*(*this).lpVtbl).QueryInterface as usize != callback_query_interface::<C> as usize
+    {
+        Err(Win32Error::new(E_INVALIDARG))
+    } else {
+        Ok(this as *mut AudioEndpointVolumeCallback<C>)
+    }
+}
+
+// converts a `Result` to an `HRESULT` so `?` can be used
+unsafe fn uncheck<E>(result: E) -> HRESULT
+where
+    E: FnOnce() -> Result<HRESULT, Win32Error>,
+{
+    match result() {
+        Ok(result) => result,
+        Err(Win32Error { code, .. }) => code,
+    }
+}
+
+unsafe extern "system" fn callback_query_interface<C>(
+    this: *mut IUnknown,
+    iid: REFIID,
+    object: *mut *mut c_void,
+) -> HRESULT {
+    uncheck(|| {
+        let this = validate::<_, C>(this)?;
+        let iid = iid.as_ref().unwrap();
+        if IsEqualIID(iid, &IUnknown::uuidof())
+            || IsEqualIID(iid, &IAudioEndpointVolumeCallback::uuidof())
+        {
+            (*this).refs.fetch_add(1, Ordering::Relaxed);
+            *object = this as *mut c_void;
+            Ok(0)
+        } else {
+            *object = ptr::null_mut();
+            Err(Win32Error::new(E_NOINTERFACE))
+        }
+    })
+}
+
+unsafe extern "system" fn callback_add_ref<C>(this: *mut IUnknown) -> ULONG {
+    match validate::<_, C>(this) {
+        Ok(this) => {
+            let count = (*this).refs.fetch_add(1, Ordering::Relaxed) + 1;
+            count as ULONG
+        }
+        Err(_) => 1,
+    }
+}
+
+unsafe extern "system" fn callback_release<C>(this: *mut IUnknown) -> ULONG {
+    match validate::<_, C>(this) {
+        Ok(this) => {
+            let count = (*this).refs.fetch_sub(1, Ordering::Release) - 1;
+            if count == 0 {
+                atomic::fence(Ordering::Acquire);
+                ptr::drop_in_place(this);
+                alloc::dealloc(
+                    this as *mut u8,
+                    alloc::Layout::for_value(this.as_ref().unwrap()),
+                );
+            }
+            count as ULONG
+        }
+        Err(_) => 1,
+    }
+}
+
+unsafe extern "system" fn callback_on_notify<C>(
+    this: *mut IAudioEndpointVolumeCallback,
+    notify: *mut AUDIO_VOLUME_NOTIFICATION_DATA,
+) -> HRESULT
+where
+    C: FnMut(&AUDIO_VOLUME_NOTIFICATION_DATA) -> Result<(), Win32Error>,
+{
+    uncheck(|| {
+        let this = validate::<_, C>(this)?;
+        ((*this).callback)(&*notify)?;
+        Ok(0)
+    })
 }

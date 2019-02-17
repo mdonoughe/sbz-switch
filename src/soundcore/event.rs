@@ -140,7 +140,7 @@ pub struct SoundCoreEventIterator {
 impl SoundCoreEventIterator {
     pub(crate) fn new(stream: SoundCoreEvents) -> Self {
         SoundCoreEventIterator {
-            inner: ComEventIterator::new(stream)
+            inner: ComEventIterator::new(stream),
         }
     }
 }

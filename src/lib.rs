@@ -21,6 +21,9 @@ pub mod media;
 pub mod soundcore;
 mod winapiext;
 
+use futures::stream::Fuse;
+use futures::{Async, Poll, Stream};
+
 use indexmap::IndexMap;
 
 use std::collections::BTreeSet;
@@ -30,9 +33,11 @@ use std::fmt;
 
 use slog::Logger;
 
-use crate::media::{DeviceEnumerator, Endpoint};
+use crate::com::event::ComEventIterator;
+use crate::media::{DeviceEnumerator, Endpoint, VolumeEvents, VolumeNotification};
 use crate::soundcore::{
-    SoundCore, SoundCoreEventIterator, SoundCoreFeature, SoundCoreParamValue, SoundCoreParameter,
+    SoundCore, SoundCoreEvent, SoundCoreEventIterator, SoundCoreEvents, SoundCoreFeature,
+    SoundCoreParamValue, SoundCoreParameter,
 };
 
 pub use crate::hresult::Win32Error;
@@ -255,6 +260,82 @@ pub fn watch(
     let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
 
     Ok(core.events()?)
+}
+
+/// Either a SoundCoreEvent or a VolumeNotification.
+#[derive(Debug)]
+pub enum SoundCoreOrVolumeEvent {
+    /// A SoundCoreEvent.
+    SoundCore(SoundCoreEvent),
+    /// A VolumeNotification.
+    Volume(VolumeNotification),
+}
+
+struct SoundCoreAndVolumeEvents {
+    sound_core: Fuse<SoundCoreEvents>,
+    volume: Fuse<VolumeEvents>,
+}
+
+impl Stream for SoundCoreAndVolumeEvents {
+    type Item = SoundCoreOrVolumeEvent;
+    type Error = Win32Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        if let Async::Ready(Some(item)) = self.sound_core.poll()? {
+            return Ok(Async::Ready(Some(SoundCoreOrVolumeEvent::SoundCore(item))));
+        }
+        if let Async::Ready(Some(item)) = self.volume.poll().unwrap() {
+            return Ok(Async::Ready(Some(SoundCoreOrVolumeEvent::Volume(item))));
+        }
+        Ok(Async::NotReady)
+    }
+}
+
+/// Iterates over volume change events and also events produced through the
+/// SoundCore API.
+///
+/// This iterator will block until the next event is available.
+pub struct SoundCoreAndVolumeEventIterator {
+    inner: ComEventIterator<SoundCoreAndVolumeEvents>,
+}
+
+impl Iterator for SoundCoreAndVolumeEventIterator {
+    type Item = Result<SoundCoreOrVolumeEvent, Win32Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
+/// Gets the sequence of events for a device.
+///
+/// If `device_id` is None, the system default output device will be used.
+///
+/// # Examples
+///
+/// ```
+/// for event in watch_with_volume(logger.clone(), None) {
+///     println!("{:?}", event);
+/// }
+/// ```
+pub fn watch_with_volume(
+    logger: &Logger,
+    device_id: Option<&OsStr>,
+) -> Result<SoundCoreAndVolumeEventIterator, Box<Error>> {
+    let endpoint = get_endpoint(logger.clone(), device_id)?;
+    let id = endpoint.id()?;
+    let clsid = endpoint.clsid()?;
+    let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
+
+    let core_events = core.event_stream()?;
+    let volume_events = endpoint.event_stream()?;
+
+    Ok(SoundCoreAndVolumeEventIterator {
+        inner: ComEventIterator::new(SoundCoreAndVolumeEvents {
+            sound_core: core_events.fuse(),
+            volume: volume_events.fuse(),
+        }),
+    })
 }
 
 #[derive(Debug)]

@@ -708,7 +708,7 @@ fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
 }
 
 fn watch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
-    for event in sbz_switch::watch(logger, matches.value_of_os("device"))? {
+    for event in sbz_switch::watch_with_volume(logger, matches.value_of_os("device"))? {
         println!("{:?}", event);
     }
     Ok(())
