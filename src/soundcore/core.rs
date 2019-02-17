@@ -10,11 +10,11 @@ use winapi::um::combaseapi::{CoCreateInstance, CLSCTX_ALL};
 use winapi::Interface;
 
 use crate::com::{ComObject, ComScope};
-use crate::ctsndcr::{HardwareInfo, ICallback, IEventNotify, ISoundCore};
+use crate::ctsndcr::{HardwareInfo, IEventNotify, ISoundCore};
 use crate::hresult::{check, Win32Error};
 
-use super::event::event_iterator;
-use super::{SoundCoreError, SoundCoreEventIterator, SoundCoreFeatureIterator};
+use super::event::{SoundCoreEventIterator, SoundCoreEvents};
+use super::{SoundCoreError, SoundCoreFeatureIterator};
 
 /// Provides control of Creative SoundBlaster features.
 ///
@@ -96,24 +96,11 @@ impl SoundCore {
                 &IEventNotify::uuidof(),
                 &mut event_notify as *mut *mut _ as *mut _,
             ))?;
-            let (mut w32sink, iterator) = event_iterator(
+            Ok(SoundCoreEventIterator::new(SoundCoreEvents::new(
                 ComObject::take(event_notify),
                 self.sound_core.clone(),
                 self.logger.clone(),
-            );
-            let callback = ICallback::new(move |e| {
-                // despite our ICallback belonging to STA COM,
-                // and events only firing while the main thread is processing events,
-                // this executes on a different plain win32 thread,
-                // so we need to marshal back to the correct thread
-                // and we can't use std :(
-                w32sink.send(*e);
-                Ok(())
-            });
-            let result = check((*event_notify).RegisterEventCallback(0xff, callback));
-            (*callback).Release();
-            result?;
-            Ok(iterator)
+            )?))
         }
     }
 }
