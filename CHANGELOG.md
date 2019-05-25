@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [3.1.1] - 2019-05-25
+### Fixed
+- Event monitor should no longer deadlock.
+
 ## [3.1.0] - 2019-02-17
 ### Added
 - There is now a `watch_with_volume` method on the API which allows API users to observe both changes to SoundBlaster settings and changes to the Windows volume settings at the same time without needing to run two threads.
@@ -47,8 +51,9 @@ This release unfortunately renames the `-f` command line parameter to `-i` to al
 ### Added
 - Command to switch speaker configuration and adjust volume.
 
-[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v3.1.0...HEAD
-[3.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v3.0.0...v3.1.0
+[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/mdonoughe/sbz-switch/compare/v3.1.0...v3.1.1
+[3.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v1.0.0...v1.1.0
