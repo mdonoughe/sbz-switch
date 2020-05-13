@@ -22,12 +22,6 @@ impl fmt::Display for SoundCoreError {
 }
 
 impl Error for SoundCoreError {
-    fn description(&self) -> &str {
-        match *self {
-            SoundCoreError::Win32(ref err) => err.description(),
-            SoundCoreError::NotSupported => "SoundCore not supported",
-        }
-    }
     fn cause(&self) -> Option<&dyn Error> {
         match *self {
             SoundCoreError::Win32(ref err) => Some(err),
