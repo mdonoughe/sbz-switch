@@ -91,6 +91,6 @@ install:
 ## Build Script ##
 
 build_script:
-  cargo build --target %target% --verbose %cargoflags%
+  - cargo build --target %target% --verbose %cargoflags%
 
 test: false
