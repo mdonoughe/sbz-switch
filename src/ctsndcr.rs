@@ -187,6 +187,11 @@ impl ICallback {
     /// `IEventNotify` allows a single `ICallback` instance to be registered
     /// for event notifications, but implementing `ICallback` requires a lot
     /// of COM glue that we shouldn't need to worry about.
+    ///
+    /// # Safety
+    ///
+    /// You must call IUnknown.Release on the returned object when you are done
+    /// with it.
     #[allow(clippy::new_ret_no_self)]
     pub unsafe fn new<C>(callback: C) -> *mut Self
     where

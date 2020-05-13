@@ -96,10 +96,10 @@ impl SoundCore {
     pub(crate) fn event_stream(&self) -> Result<SoundCoreEvents, Win32Error> {
         unsafe {
             let mut event_notify = MaybeUninit::<*mut IEventNotify>::uninit();
-            check(self.sound_core.QueryInterface(
-                &IEventNotify::uuidof(),
-                event_notify.as_mut_ptr() as *mut _,
-            ))?;
+            check(
+                self.sound_core
+                    .QueryInterface(&IEventNotify::uuidof(), event_notify.as_mut_ptr() as *mut _),
+            )?;
             Ok(SoundCoreEvents::new(
                 ComObject::take(event_notify.assume_init()),
                 self.sound_core.clone(),

@@ -134,10 +134,10 @@ impl Endpoint {
             .get_or_create(|| unsafe {
                 trace!(self.logger, "Opening PropertyStore...");
                 let mut property_store = MaybeUninit::uninit();
-                check(self.device.OpenPropertyStore(
-                    STGM_READ,
-                    property_store.as_mut_ptr(),
-                ))?;
+                check(
+                    self.device
+                        .OpenPropertyStore(STGM_READ, property_store.as_mut_ptr()),
+                )?;
                 Ok(PropertyStore(
                     ComObject::take(property_store.assume_init()),
                     self.logger.clone(),
@@ -330,7 +330,10 @@ impl DeviceEnumerator {
                 enumerator.as_mut_ptr() as *mut _,
             ))?;
             trace!(logger, "Created DeviceEnumerator");
-            Ok(DeviceEnumerator(ComObject::take(enumerator.assume_init()), logger))
+            Ok(DeviceEnumerator(
+                ComObject::take(enumerator.assume_init()),
+                logger,
+            ))
         }
     }
     /// Gets all active audio outputs.
@@ -339,10 +342,11 @@ impl DeviceEnumerator {
         unsafe {
             trace!(self.1, "Getting active endpoints...");
             let mut collection = MaybeUninit::uninit();
-            check(
-                self.0
-                    .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, collection.as_mut_ptr()),
-            )?;
+            check(self.0.EnumAudioEndpoints(
+                eRender,
+                DEVICE_STATE_ACTIVE,
+                collection.as_mut_ptr(),
+            ))?;
             let collection = collection.assume_init();
             let mut count = 0;
             check((*collection).GetCount(&mut count))?;
@@ -350,7 +354,10 @@ impl DeviceEnumerator {
             for i in 0..count {
                 let mut device = MaybeUninit::uninit();
                 check((*collection).Item(i, device.as_mut_ptr()))?;
-                result.push(Endpoint::new(ComObject::take(device.assume_init()), self.1.clone()))
+                result.push(Endpoint::new(
+                    ComObject::take(device.assume_init()),
+                    self.1.clone(),
+                ))
             }
             Ok(result)
         }
@@ -368,7 +375,10 @@ impl DeviceEnumerator {
                 self.0
                     .GetDefaultAudioEndpoint(eRender, eConsole, device.as_mut_ptr()),
             )?;
-            Ok(Endpoint::new(ComObject::take(device.assume_init()), self.1.clone()))
+            Ok(Endpoint::new(
+                ComObject::take(device.assume_init()),
+                self.1.clone(),
+            ))
         }
     }
     /// Get a specific audio endpoint by its ID.
@@ -378,7 +388,10 @@ impl DeviceEnumerator {
         unsafe {
             let mut device = MaybeUninit::uninit();
             check(self.0.GetDevice(buffer.as_ptr(), device.as_mut_ptr()))?;
-            Ok(Endpoint::new(ComObject::take(device.assume_init()), self.1.clone()))
+            Ok(Endpoint::new(
+                ComObject::take(device.assume_init()),
+                self.1.clone(),
+            ))
         }
     }
 }

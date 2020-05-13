@@ -153,7 +153,7 @@ impl SoundCoreParameter {
                     _ => panic!("tried to set parameter with nothing"),
                 },
                 value: match *value {
-                    SoundCoreParamValue::Float(f) => mem::transmute(f),
+                    SoundCoreParamValue::Float(f) => f.to_bits(),
                     SoundCoreParamValue::Bool(b) => {
                         if b {
                             0xffff_ffff
