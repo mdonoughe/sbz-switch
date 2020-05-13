@@ -3,7 +3,7 @@ use futures::{Async, Stream};
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
-use std::{mem, ptr};
+use std::{mem::MaybeUninit, ptr};
 
 use winapi::um::combaseapi::{CoWaitForMultipleObjects, CWMO_DISPATCH_CALLS};
 use winapi::um::handleapi::CloseHandle;
@@ -65,15 +65,16 @@ impl ComUnpark {
         }
         loop {
             unsafe {
-                let mut which = mem::uninitialized();
+                let mut which = MaybeUninit::uninit();
                 check(CoWaitForMultipleObjects(
                     CWMO_DISPATCH_CALLS,
                     INFINITE,
                     1,
                     &ready_event,
-                    &mut which as *mut _,
+                    which.as_mut_ptr(),
                 ))
                 .expect("failed to wait for unpark");
+                which.assume_init();
             };
             let mut state = self.state.lock().unwrap();
             if let Some(ready) = state.ready.pop_front() {

@@ -9,7 +9,7 @@ use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::isize;
-use std::mem;
+use std::mem::MaybeUninit;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
 use std::slice;
@@ -118,8 +118,9 @@ impl Endpoint {
     pub fn id(&self) -> Result<String, Win32Error> {
         unsafe {
             trace!(self.logger, "Getting device ID...");
-            let mut raw_id = mem::uninitialized();
-            check(self.device.GetId(&mut raw_id))?;
+            let mut raw_id = MaybeUninit::uninit();
+            check(self.device.GetId(raw_id.as_mut_ptr()))?;
+            let raw_id = raw_id.assume_init();
             let length = (0..isize::MAX)
                 .position(|i| *raw_id.offset(i) == 0)
                 .unwrap();
@@ -132,13 +133,13 @@ impl Endpoint {
         self.properties
             .get_or_create(|| unsafe {
                 trace!(self.logger, "Opening PropertyStore...");
-                let mut property_store = mem::uninitialized();
+                let mut property_store = MaybeUninit::uninit();
                 check(self.device.OpenPropertyStore(
                     STGM_READ,
-                    &mut property_store as *mut *mut IPropertyStore as *mut _,
+                    property_store.as_mut_ptr(),
                 ))?;
                 Ok(PropertyStore(
-                    ComObject::take(property_store),
+                    ComObject::take(property_store.assume_init()),
                     self.logger.clone(),
                 ))
             })
@@ -178,14 +179,14 @@ impl Endpoint {
     fn volume(&self) -> Result<ComObject<IAudioEndpointVolume>, Win32Error> {
         self.volume
             .get_or_create(|| unsafe {
-                let mut ctrl: *mut IAudioEndpointVolume = mem::uninitialized();
+                let mut ctrl = MaybeUninit::<*mut IAudioEndpointVolume>::uninit();
                 check(self.device.Activate(
                     &IAudioEndpointVolume::uuidof(),
                     CLSCTX_ALL,
                     ptr::null_mut(),
-                    &mut ctrl as *mut *mut IAudioEndpointVolume as *mut _,
+                    ctrl.as_mut_ptr() as *mut _,
                 ))?;
-                Ok(ComObject::take(ctrl))
+                Ok(ComObject::take(ctrl.assume_init()))
             })
             .clone()
     }
@@ -227,11 +228,12 @@ impl Endpoint {
     pub fn get_volume(&self) -> Result<f32, Win32Error> {
         unsafe {
             debug!(self.logger, "Getting volume...");
-            let mut volume: f32 = mem::uninitialized();
+            let mut volume = MaybeUninit::uninit();
             check(
                 self.volume()?
-                    .GetMasterVolumeLevelScalar(&mut volume as *mut f32),
+                    .GetMasterVolumeLevelScalar(volume.as_mut_ptr()),
             )?;
+            let volume = volume.assume_init();
             debug!(self.logger, "volume = {}", volume);
             Ok(volume)
         }
@@ -281,9 +283,9 @@ struct PropertyStore(ComObject<IPropertyStore>, Logger);
 impl PropertyStore {
     unsafe fn get_value(&self, key: &PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
         trace!(self.1, "Getting property...");
-        let mut property_value = mem::uninitialized();
-        check(self.0.GetValue(key, &mut property_value))?;
-        Ok(property_value)
+        let mut property_value = MaybeUninit::uninit();
+        check(self.0.GetValue(key, property_value.as_mut_ptr()))?;
+        Ok(property_value.assume_init())
     }
     #[allow(clippy::cast_ptr_alignment)]
     fn get_string_value(&self, key: &PROPERTYKEY) -> Result<String, GetPropertyError> {
@@ -318,17 +320,17 @@ impl DeviceEnumerator {
     pub fn with_logger(logger: Logger) -> Result<Self, Win32Error> {
         unsafe {
             let _scope = ComScope::begin();
-            let mut enumerator: *mut IMMDeviceEnumerator = mem::uninitialized();
+            let mut enumerator = MaybeUninit::<*mut IMMDeviceEnumerator>::uninit();
             trace!(logger, "Creating DeviceEnumerator...");
             check(CoCreateInstance(
                 &CLSID_MMDeviceEnumerator,
                 ptr::null_mut(),
                 CLSCTX_ALL,
                 &IMMDeviceEnumerator::uuidof(),
-                &mut enumerator as *mut *mut IMMDeviceEnumerator as *mut _,
+                enumerator.as_mut_ptr() as *mut _,
             ))?;
             trace!(logger, "Created DeviceEnumerator");
-            Ok(DeviceEnumerator(ComObject::take(enumerator), logger))
+            Ok(DeviceEnumerator(ComObject::take(enumerator.assume_init()), logger))
         }
     }
     /// Gets all active audio outputs.
@@ -336,18 +338,19 @@ impl DeviceEnumerator {
     pub fn get_active_audio_endpoints(&self) -> Result<Vec<Endpoint>, Win32Error> {
         unsafe {
             trace!(self.1, "Getting active endpoints...");
-            let mut collection = mem::uninitialized();
+            let mut collection = MaybeUninit::uninit();
             check(
                 self.0
-                    .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &mut collection),
+                    .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, collection.as_mut_ptr()),
             )?;
+            let collection = collection.assume_init();
             let mut count = 0;
             check((*collection).GetCount(&mut count))?;
             let mut result = Vec::with_capacity(count as usize);
             for i in 0..count {
-                let mut device = mem::uninitialized();
-                check((*collection).Item(i, &mut device))?;
-                result.push(Endpoint::new(ComObject::take(device), self.1.clone()))
+                let mut device = MaybeUninit::uninit();
+                check((*collection).Item(i, device.as_mut_ptr()))?;
+                result.push(Endpoint::new(ComObject::take(device.assume_init()), self.1.clone()))
             }
             Ok(result)
         }
@@ -360,12 +363,12 @@ impl DeviceEnumerator {
     pub fn get_default_audio_endpoint(&self) -> Result<Endpoint, Win32Error> {
         unsafe {
             trace!(self.1, "Getting default endpoint...");
-            let mut device = mem::uninitialized();
+            let mut device = MaybeUninit::uninit();
             check(
                 self.0
-                    .GetDefaultAudioEndpoint(eRender, eConsole, &mut device),
+                    .GetDefaultAudioEndpoint(eRender, eConsole, device.as_mut_ptr()),
             )?;
-            Ok(Endpoint::new(ComObject::take(device), self.1.clone()))
+            Ok(Endpoint::new(ComObject::take(device.assume_init()), self.1.clone()))
         }
     }
     /// Get a specific audio endpoint by its ID.
@@ -373,9 +376,9 @@ impl DeviceEnumerator {
         trace!(self.1, "Getting endpoint...");
         let buffer: Vec<_> = id.encode_wide().chain(Some(0)).collect();
         unsafe {
-            let mut device = mem::uninitialized();
-            check(self.0.GetDevice(buffer.as_ptr(), &mut device))?;
-            Ok(Endpoint::new(ComObject::take(device), self.1.clone()))
+            let mut device = MaybeUninit::uninit();
+            check(self.0.GetDevice(buffer.as_ptr(), device.as_mut_ptr()))?;
+            Ok(Endpoint::new(ComObject::take(device.assume_init()), self.1.clone()))
         }
     }
 }

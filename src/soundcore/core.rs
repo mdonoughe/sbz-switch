@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::mem;
+use std::mem::MaybeUninit;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 
@@ -45,16 +45,16 @@ impl SoundCore {
     #[allow(clippy::new_ret_no_self)]
     fn new(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
         unsafe {
-            let mut sc: *mut ISoundCore = mem::uninitialized();
+            let mut sc = MaybeUninit::<*mut ISoundCore>::uninit();
             check(CoCreateInstance(
                 clsid,
                 ptr::null_mut(),
                 CLSCTX_ALL,
                 &ISoundCore::uuidof(),
-                &mut sc as *mut *mut ISoundCore as *mut _,
+                sc.as_mut_ptr() as *mut _,
             ))?;
             Ok(SoundCore {
-                sound_core: ComObject::take(sc),
+                sound_core: ComObject::take(sc.assume_init()),
                 logger,
             })
         }
@@ -95,13 +95,13 @@ impl SoundCore {
 
     pub(crate) fn event_stream(&self) -> Result<SoundCoreEvents, Win32Error> {
         unsafe {
-            let mut event_notify: *mut IEventNotify = mem::uninitialized();
+            let mut event_notify = MaybeUninit::<*mut IEventNotify>::uninit();
             check(self.sound_core.QueryInterface(
                 &IEventNotify::uuidof(),
-                &mut event_notify as *mut *mut _ as *mut _,
+                event_notify.as_mut_ptr() as *mut _,
             ))?;
             Ok(SoundCoreEvents::new(
-                ComObject::take(event_notify),
+                ComObject::take(event_notify.assume_init()),
                 self.sound_core.clone(),
                 self.logger.clone(),
             )?)

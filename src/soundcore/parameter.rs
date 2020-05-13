@@ -1,4 +1,4 @@
-use std::mem;
+use std::mem::{self, MaybeUninit};
 use std::str;
 
 use slog::Logger;
@@ -98,7 +98,7 @@ impl SoundCoreParameter {
                 feature: self.feature_id,
                 param: self.id,
             };
-            let mut value: ParamValue = mem::uninitialized();
+            let mut value = MaybeUninit::uninit();
             trace!(
                 self.logger,
                 "Fetching parameter value .{}.{}.{}...",
@@ -106,7 +106,7 @@ impl SoundCoreParameter {
                 self.feature_id,
                 self.id
             );
-            match check(self.core.GetParamValue(param, &mut value)) {
+            match check(self.core.GetParamValue(param, value.as_mut_ptr())) {
                 Ok(_) => {}
                 Err(Win32Error { code, .. }) if code == E_ACCESSDENIED => {
                     trace!(
@@ -121,6 +121,7 @@ impl SoundCoreParameter {
                 }
                 Err(error) => return Err(error),
             };
+            let value = value.assume_init();
             trace!(
                 self.logger,
                 "Got parameter value .{}.{}.{} = {:?}",

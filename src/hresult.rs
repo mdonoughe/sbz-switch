@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt;
-use std::mem;
+use std::mem::MaybeUninit;
 use std::os::windows::ffi::OsStringExt;
 use std::ptr;
 use std::slice;
@@ -38,19 +38,20 @@ impl fmt::Display for Win32Error {
         match (self.code >> 16) & 0x1fff {
             // if it's a win32 error, use FormatMessage to get a description
             facility if facility == FACILITY_WIN32 => unsafe {
-                let mut buffer: *mut u16 = mem::uninitialized();
+                let mut buffer = MaybeUninit::<*mut u16>::uninit();
                 let len = FormatMessageW(
                     FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
                     ptr::null(),
                     (self.code & 0xffff) as u32,
                     0,
-                    &mut buffer as *mut *mut _ as *mut _,
+                    buffer.as_mut_ptr() as *mut _,
                     0,
                     ptr::null_mut(),
                 );
                 match len {
                     0 => write!(f, "Unexpected HRESULT: {:X}", self.code),
                     len => {
+                        let buffer = buffer.assume_init();
                         let str: OsString =
                             OsStringExt::from_wide(slice::from_raw_parts(buffer, len as usize));
                         LocalFree(buffer as *mut _);
