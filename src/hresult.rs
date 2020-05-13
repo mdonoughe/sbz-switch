@@ -69,7 +69,7 @@ impl fmt::Display for Win32Error {
 }
 
 impl Error for Win32Error {
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         None
     }
 }

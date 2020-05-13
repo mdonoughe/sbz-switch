@@ -49,7 +49,7 @@ use crate::lazy::Lazy;
 use crate::soundcore::{SoundCoreError, PKEY_SOUNDCORECTL_CLSID};
 use crate::winapiext::{PKEY_DeviceInterface_FriendlyName, PKEY_Device_DeviceDesc};
 
-fn parse_guid(src: &str) -> Result<GUID, Box<Error>> {
+fn parse_guid(src: &str) -> Result<GUID, Box<dyn Error>> {
     let re1 = Regex::new(
         "^\\{([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-\
          ([0-9a-fA-F]{4})-([0-9a-fA-F]{2})([0-9a-fA-F]{2})-\
@@ -262,7 +262,7 @@ impl fmt::Display for GetPropertyError {
 }
 
 impl Error for GetPropertyError {
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         match self {
             GetPropertyError::Win32(error) => Some(error),
             _ => None,

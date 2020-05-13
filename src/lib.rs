@@ -83,7 +83,7 @@ pub struct DeviceInfo {
 ///     println!("{}: {}", device.id, device.description);
 /// }
 /// ```
-pub fn list_devices(logger: &Logger) -> Result<Vec<DeviceInfo>, Box<Error>> {
+pub fn list_devices(logger: &Logger) -> Result<Vec<DeviceInfo>, Box<dyn Error>> {
     let endpoints = DeviceEnumerator::with_logger(logger.clone())?.get_active_audio_endpoints()?;
     let mut result = Vec::with_capacity(endpoints.len());
     for endpoint in endpoints {
@@ -115,7 +115,7 @@ fn get_endpoint(logger: Logger, device_id: Option<&OsStr>) -> Result<Endpoint, W
 /// ```
 /// println!("{:?}", dump(logger.clone(), None)?);
 /// ```
-pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Configuration, Box<Error>> {
+pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> {
     let endpoint = get_endpoint(logger.clone(), device_id)?;
 
     let endpoint_output = EndpointConfiguration {
@@ -225,7 +225,7 @@ pub fn set(
     device_id: Option<&OsStr>,
     configuration: &Configuration,
     mute: bool,
-) -> Result<(), Box<Error>> {
+) -> Result<(), Box<dyn Error>> {
     let endpoint = get_endpoint(logger.clone(), device_id)?;
     let mute_unmute = mute && !endpoint.get_mute()?;
     if mute_unmute {
@@ -253,7 +253,7 @@ pub fn set(
 pub fn watch(
     logger: &Logger,
     device_id: Option<&OsStr>,
-) -> Result<SoundCoreEventIterator, Box<Error>> {
+) -> Result<SoundCoreEventIterator, Box<dyn Error>> {
     let endpoint = get_endpoint(logger.clone(), device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
@@ -321,7 +321,7 @@ impl Iterator for SoundCoreAndVolumeEventIterator {
 pub fn watch_with_volume(
     logger: &Logger,
     device_id: Option<&OsStr>,
-) -> Result<SoundCoreAndVolumeEventIterator, Box<Error>> {
+) -> Result<SoundCoreAndVolumeEventIterator, Box<dyn Error>> {
     let endpoint = get_endpoint(logger.clone(), device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
@@ -361,7 +361,7 @@ impl Error for UnsupportedValueError {
         "The provided value was not compatible with the specified parameter."
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         None
     }
 }
@@ -410,7 +410,7 @@ fn set_internal(
     logger: &Logger,
     configuration: &Configuration,
     endpoint: &Endpoint,
-) -> Result<(), Box<Error>> {
+) -> Result<(), Box<dyn Error>> {
     if let Some(ref creative) = configuration.creative {
         let id = endpoint.id()?;
         debug!(logger, "Found device {}", id);

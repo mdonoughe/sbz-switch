@@ -28,7 +28,7 @@ impl Error for SoundCoreError {
             SoundCoreError::NotSupported => "SoundCore not supported",
         }
     }
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         match *self {
             SoundCoreError::Win32(ref err) => Some(err),
             SoundCoreError::NotSupported => None,

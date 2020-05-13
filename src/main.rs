@@ -199,7 +199,7 @@ impl fmt::Display for FormatError {
 }
 
 impl Error for FormatError {
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         match &self {
             FormatError::TomlRead(error) => Some(error),
             FormatError::TomlWrite(error) => Some(error),
@@ -582,7 +582,7 @@ impl From<DeviceInfo> for SerializableDeviceInfo {
     }
 }
 
-fn list_devices(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn list_devices(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let devices: Vec<_> = sbz_switch::list_devices(logger)?
         .into_iter()
         .map(SerializableDeviceInfo::from)
@@ -597,7 +597,7 @@ fn list_devices(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>>
     Ok(())
 }
 
-fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let table = sbz_switch::dump(logger, matches.value_of_os("device"))?;
     let text = format_configuration(&table, matches)?;
     let output = matches.value_of("output");
@@ -608,7 +608,7 @@ fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     Ok(())
 }
 
-fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let mut text = String::new();
     match matches.value_of("file") {
         Some(name) => BufReader::new(File::open(name)?).read_to_string(&mut text)?,
@@ -664,7 +664,7 @@ fn collate_set_values<I, F>(iter: Option<I>, f: F) -> Collator<I, F> {
     Collator { iter, f }
 }
 
-fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let mut creative_table = IndexMap::<String, IndexMap<String, SoundCoreParamValue>>::new();
 
     for (feature, parameter, value) in collate_set_values(matches.values_of("bool"), |s| {
@@ -707,7 +707,7 @@ fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
     sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
 }
 
-fn watch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<Error>> {
+fn watch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     for event in sbz_switch::watch_with_volume(logger, matches.value_of_os("device"))? {
         println!("{:?}", event);
     }
