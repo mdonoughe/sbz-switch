@@ -295,8 +295,7 @@ impl PropertyStore {
                 PropVariantClear(&mut property_value);
                 return Err(GetPropertyError::UnexpectedType(property_value.vt));
             }
-            let chars: *const u16 =
-                ptr::read_unaligned(property_value.data.as_ptr() as *const *const u16);
+            let chars = *property_value.data.pwszVal();
             let length = (0..isize::MAX).position(|i| *chars.offset(i) == 0);
             let str = length.map(|length| {
                 OsString::from_wide(slice::from_raw_parts(chars, length))
