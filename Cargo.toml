@@ -1,6 +1,6 @@
 [package]
 name = "sbz-switch"
-version = "3.1.1"
+version = "4.0.0"
 authors = ["Matthew Donoughe <mdonoughe@gmail.com>"]
 description = "Utility for changing Sound Blaster parameters on Windows"
 repository = "https://github.com/mdonoughe/sbz-switch/"
@@ -14,17 +14,17 @@ edition = "2018"
 appveyor = { repository = "mdonoughe/sbz-switch" }
 
 [dependencies]
-clap = "2.32"
-futures = "0.1"
-indexmap = "1.0"
-regex = "1.1"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
+clap = "2"
+futures = "0.3"
+indexmap = "1"
+regex = "1"
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
 serde_yaml = "0.8"
-slog = { version = "2.4", features = ["max_level_trace", "release_max_level_info"] }
-sloggers = "0.3"
-toml = "0.4"
+slog = { version = "2", features = ["max_level_trace", "release_max_level_info"] }
+sloggers = "1"
+toml = "0.5"
 winapi = { version = "0.3", features = ["combaseapi", "coml2api", "endpointvolume", "mmdeviceapi", "objbase", "oleauto", "synchapi", "unknwnbase", "winerror"] }
 
 [package.metadata.docs.rs]

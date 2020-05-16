@@ -22,7 +22,8 @@ pub mod soundcore;
 mod winapiext;
 
 use futures::stream::Fuse;
-use futures::{Async, Poll, Stream};
+use futures::task::Context;
+use futures::{Stream, StreamExt};
 
 use indexmap::IndexMap;
 
@@ -30,6 +31,8 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
+use std::pin::Pin;
+use std::task::Poll;
 
 use slog::Logger;
 
@@ -277,17 +280,19 @@ struct SoundCoreAndVolumeEvents {
 }
 
 impl Stream for SoundCoreAndVolumeEvents {
-    type Item = SoundCoreOrVolumeEvent;
-    type Error = Win32Error;
+    type Item = Result<SoundCoreOrVolumeEvent, Win32Error>;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        if let Async::Ready(Some(item)) = self.sound_core.poll()? {
-            return Ok(Async::Ready(Some(SoundCoreOrVolumeEvent::SoundCore(item))));
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        if let Poll::Ready(Some(item)) = Pin::new(&mut self.sound_core).poll_next(cx) {
+            Poll::Ready(Some(match item {
+                Ok(item) => Ok(SoundCoreOrVolumeEvent::SoundCore(item)),
+                Err(err) => Err(err),
+            }))
+        } else if let Poll::Ready(Some(item)) = Pin::new(&mut self.volume).poll_next(cx) {
+            Poll::Ready(Some(Ok(SoundCoreOrVolumeEvent::Volume(item))))
+        } else {
+            Poll::Pending
         }
-        if let Async::Ready(Some(item)) = self.volume.poll().unwrap() {
-            return Ok(Async::Ready(Some(SoundCoreOrVolumeEvent::Volume(item))));
-        }
-        Ok(Async::NotReady)
     }
 }
 

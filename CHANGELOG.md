@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [4.0.0] - 2020-05-14
+### Changed
+- Now compatible with winapi 0.3.8 and futures 0.3.
+
 ## [3.1.1] - 2019-05-25
 ### Fixed
 - Event monitor should no longer deadlock.
@@ -51,7 +55,8 @@ This release unfortunately renames the `-f` command line parameter to `-i` to al
 ### Added
 - Command to switch speaker configuration and adjust volume.
 
-[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v3.1.1...v4.0.0
 [3.1.1]: https://github.com/mdonoughe/sbz-switch/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v2.0.0...v3.0.0

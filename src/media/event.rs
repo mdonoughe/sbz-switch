@@ -1,9 +1,10 @@
-use futures::task::AtomicTask;
-use futures::{Async, Poll, Stream};
+use futures::channel::mpsc;
+use futures::sink::SinkExt;
+use futures::{executor, Stream};
 
-use std::clone::Clone;
 use std::fmt;
-use std::sync::{mpsc, Arc};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use winapi::shared::guiddef::GUID;
 use winapi::shared::winerror::E_ABORT;
@@ -53,28 +54,22 @@ impl fmt::Debug for VolumeNotification {
 
 pub(crate) struct VolumeEvents {
     volume: ComObject<IAudioEndpointVolume>,
-    events: mpsc::Receiver<VolumeNotification>,
-    task: Arc<AtomicTask>,
+    events: mpsc::UnboundedReceiver<VolumeNotification>,
     callback: ComObject<IAudioEndpointVolumeCallback>,
 }
 
 impl VolumeEvents {
     pub fn new(volume: ComObject<IAudioEndpointVolume>) -> Result<Self, Win32Error> {
-        let task = Arc::new(AtomicTask::new());
-        let (tx, rx) = mpsc::channel();
+        let (mut tx, rx) = mpsc::unbounded();
 
-        let tx_task = task.clone();
         unsafe {
             let callback = AudioEndpointVolumeCallback::wrap(move |e| {
-                match tx.send(VolumeNotification {
+                match executor::block_on(tx.send(VolumeNotification {
                     event_context: e.guidEventContext,
                     is_muted: e.bMuted != 0,
                     volume: e.fMasterVolume,
-                }) {
-                    Ok(()) => {
-                        tx_task.notify();
-                        Ok(())
-                    }
+                })) {
+                    Ok(()) => Ok(()),
                     Err(_) => Err(Win32Error::new(E_ABORT)),
                 }
             });
@@ -88,7 +83,6 @@ impl VolumeEvents {
             Ok(Self {
                 volume,
                 events: rx,
-                task,
                 callback: ComObject::take(callback),
             })
         }
@@ -97,15 +91,9 @@ impl VolumeEvents {
 
 impl Stream for VolumeEvents {
     type Item = VolumeNotification;
-    type Error = ();
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.task.register();
-        match self.events.try_recv() {
-            Ok(e) => Ok(Async::Ready(Some(e))),
-            Err(mpsc::TryRecvError::Empty) => Ok(Async::NotReady),
-            Err(mpsc::TryRecvError::Disconnected) => Ok(Async::Ready(None)),
-        }
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.events).poll_next(cx)
     }
 }
 
