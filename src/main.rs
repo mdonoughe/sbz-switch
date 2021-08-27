@@ -38,6 +38,13 @@ use toml::value::Value;
 use sbz_switch::soundcore::SoundCoreParamValue;
 use sbz_switch::{Configuration, DeviceInfo, EndpointConfiguration};
 
+// Constants for switching:
+const HEADPHONEDEVID: u32 = 0; // Check under the Dump Command In the "[Device Control]" Section
+const SPEAKERDEVID: u32 = 1;   // If your values for the SelectOutput Parameter differ from this Configuration  
+const HEADPHONEVOL: f32 = 8.0; // Floating Point value of the desired HP Volume
+const SPEAKERVOL: f32 = 100.0; // Floating Point value of the desired SP Volume
+
+
 fn main() {
     std::process::exit(run());
 }
@@ -188,11 +195,11 @@ fn sth(logger: &Logger, dev: Option<&OsStr>) -> Result<(), Box<dyn Error>> {
     creative_table
         .entry("Device Control".to_string())
         .or_insert_with(IndexMap::<String, SoundCoreParamValue>::new)
-        .insert("SelectOutput".to_string(), sbz_switch::soundcore::SoundCoreParamValue::U32(0));
+        .insert("SelectOutput".to_string(), sbz_switch::soundcore::SoundCoreParamValue::U32(HEADPHONEDEVID));
 
     let config = Configuration{
         endpoint: Some(EndpointConfiguration{
-            volume: Some(8.0 / 100.0),
+            volume: Some(HEADPHONEVOL / 100.0),
         }),
         creative: Some(creative_table),
     };
@@ -205,11 +212,11 @@ fn sts(logger: &Logger, dev: Option<&OsStr>) -> Result<(), Box<dyn Error>>{
     creative_table
         .entry("Device Control".to_string())
         .or_insert_with(IndexMap::<String, SoundCoreParamValue>::new)
-        .insert("SelectOutput".to_string(), sbz_switch::soundcore::SoundCoreParamValue::U32(1));
+        .insert("SelectOutput".to_string(), sbz_switch::soundcore::SoundCoreParamValue::U32(SPEAKERDEVID));
 
     let config = Configuration{
         endpoint: Some(EndpointConfiguration{
-            volume: Some(1.0),
+            volume: Some(SPEAKERVOL / 100.0),
         }),
         creative: Some(creative_table),
     };
