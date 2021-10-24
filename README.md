@@ -6,7 +6,7 @@
 
 
 This Version has a mode Added that can automatically switches from speaker usage to Headphon Usage and back. It Is also able to Change System Volume to Predefined Levels while doing so.
-See Values in the "Constants for Switching Section in main.rs
+This creates a file named `quickswitch.conf` in the working directory which allows you to set the device IDs to toggle between as well as setting their volume levels and if you want to mute output while switching
 
 
 The Sound Blaster drivers, at least for the Sound Blaster Z, expose the speaker and headphone outputs as a single audio device to Windows, meaning the normal Windows methods of switching the sound output device will not work. Creative provides a graphical utility for this, but does it does not support hotkeys or anything like that, and it does not maintain a separate volume level for headphones vs speakers.
