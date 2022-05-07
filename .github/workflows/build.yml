@@ -19,8 +19,9 @@ jobs:
 
     - name: rustfmt
       run: cargo fmt --check
-    - name: clippy
-      run: cargo clippy --verbose
+    - uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build
       run: cargo build --release --verbose
