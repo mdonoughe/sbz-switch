@@ -8,10 +8,10 @@ readme = "README.md"
 keywords = ["windows", "sound"]
 categories = ["command-line-utilities", "multimedia::audio"]
 license = "MIT/Apache-2.0"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-clap = "2"
+clap = { version = "3", features = ["cargo"] }
 futures = "0.3"
 indexmap = "1"
 regex = "1"
