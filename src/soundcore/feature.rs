@@ -32,12 +32,12 @@ impl SoundCoreFeature {
             .description
             .iter()
             .position(|i| *i == 0)
-            .unwrap_or_else(|| info.description.len());
+            .unwrap_or(info.description.len());
         let version_length = info
             .version
             .iter()
             .position(|i| *i == 0)
-            .unwrap_or_else(|| info.version.len());
+            .unwrap_or(info.version.len());
         Self {
             core,
             logger,

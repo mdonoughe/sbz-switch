@@ -100,11 +100,11 @@ impl SoundCore {
                 self.sound_core
                     .QueryInterface(&IEventNotify::uuidof(), event_notify.as_mut_ptr() as *mut _),
             )?;
-            Ok(SoundCoreEvents::new(
+            SoundCoreEvents::new(
                 ComObject::take(event_notify.assume_init()),
                 self.sound_core.clone(),
                 self.logger.clone(),
-            )?)
+            )
         }
     }
 }

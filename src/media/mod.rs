@@ -82,7 +82,7 @@ fn parse_guid(src: &str) -> Result<GUID, Box<dyn Error>> {
     let l = u32::from_str_radix(iter.next().unwrap(), 16).unwrap();
     let w1 = u16::from_str_radix(iter.next().unwrap(), 16).unwrap();
     let w2 = u16::from_str_radix(iter.next().unwrap(), 16).unwrap();
-    let mut array = [0 as u8; 8];
+    let mut array = [0; 8];
     for b in iter.enumerate() {
         array[b.0] = u8::from_str_radix(b.1, 16).unwrap();
     }
@@ -239,7 +239,7 @@ impl Endpoint {
         }
     }
     pub(crate) fn event_stream(&self) -> Result<VolumeEvents, Win32Error> {
-        Ok(VolumeEvents::new(self.volume()?)?)
+        VolumeEvents::new(self.volume()?)
     }
 }
 
