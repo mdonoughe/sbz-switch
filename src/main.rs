@@ -331,7 +331,7 @@ fn unformat_configuration(value: &str, matches: &ArgMatches) -> Result<Configura
     Ok(match matches.value_of("format").unwrap() {
         "toml" => {
             let value: SerdeConfiguration<BTreeMap<String, BTreeMap<String, Value>>> =
-                toml::from_str(&value).map_err(FormatError::TomlRead)?;
+                toml::from_str(value).map_err(FormatError::TomlRead)?;
             Configuration {
                 endpoint: value.endpoint.map(Into::into),
                 creative: transpose(value.creative.map(|creative| {
@@ -362,7 +362,7 @@ fn unformat_configuration(value: &str, matches: &ArgMatches) -> Result<Configura
         }
         "json" => {
             let value: SerdeConfiguration<serde_json::Map<String, serde_json::Value>> =
-                serde_json::from_str(&value).map_err(FormatError::Json)?;
+                serde_json::from_str(value).map_err(FormatError::Json)?;
             Configuration {
                 endpoint: value.endpoint.map(Into::into),
                 creative: transpose(value.creative.map(|creative| {
@@ -397,7 +397,7 @@ fn unformat_configuration(value: &str, matches: &ArgMatches) -> Result<Configura
         }
         "yaml" => {
             let value: SerdeConfiguration<serde_yaml::Mapping> =
-                serde_yaml::from_str(&value).map_err(FormatError::Yaml)?;
+                serde_yaml::from_str(value).map_err(FormatError::Yaml)?;
             Configuration {
                 endpoint: value.endpoint.map(Into::into),
                 creative: transpose(value.creative.map(|creative| {
