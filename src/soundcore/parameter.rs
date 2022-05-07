@@ -61,7 +61,7 @@ impl SoundCoreParameter {
             .description
             .iter()
             .position(|i| *i == 0)
-            .unwrap_or_else(|| info.description.len());
+            .unwrap_or(info.description.len());
         Self {
             core,
             context: info.param.context,
