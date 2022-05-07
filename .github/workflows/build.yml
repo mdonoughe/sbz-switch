@@ -19,9 +19,6 @@ jobs:
 
     - name: rustfmt
       run: cargo fmt --check
-
-    - name: Install clippy
-      run: rustup component add clippy
     - name: clippy
       run: cargo clippy --verbose
 
