@@ -27,7 +27,7 @@ jobs:
 
     - name: Build
       run: cargo build --release --verbose
-    - name: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v3
       with:
         name: binaries
         path: |
