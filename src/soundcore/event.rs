@@ -7,8 +7,6 @@ use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use slog::Logger;
-
 use winapi::shared::winerror::E_ABORT;
 
 use crate::com::event::ComEventIterator;
@@ -21,7 +19,6 @@ use super::{SoundCoreFeature, SoundCoreParameter};
 pub(crate) struct SoundCoreEvents {
     event_notify: ComObject<IEventNotify>,
     events: mpsc::UnboundedReceiver<EventInfo>,
-    logger: Logger,
     core: ComObject<ISoundCore>,
 }
 
@@ -29,7 +26,6 @@ impl SoundCoreEvents {
     pub fn new(
         event_notify: ComObject<IEventNotify>,
         core: ComObject<ISoundCore>,
-        logger: Logger,
     ) -> Result<Self, Win32Error> {
         let (mut tx, rx) = mpsc::unbounded();
 
@@ -48,7 +44,6 @@ impl SoundCoreEvents {
             event_notify,
             events: rx,
             core,
-            logger,
         })
     }
 }
@@ -69,12 +64,7 @@ impl Stream for SoundCoreEvents {
                     .map(|_| feature);
                     match feature {
                         Ok(feature) => {
-                            let feature = SoundCoreFeature::new(
-                                self.core.clone(),
-                                self.logger.clone(),
-                                0,
-                                &feature,
-                            );
+                            let feature = SoundCoreFeature::new(self.core.clone(), 0, &feature);
                             let mut param = mem::zeroed();
                             let param = check(self.core.GetParamInfo(
                                 Param {
@@ -90,7 +80,6 @@ impl Stream for SoundCoreEvents {
                                     let param = SoundCoreParameter::new(
                                         self.core.clone(),
                                         feature.description.clone(),
-                                        self.logger.clone(),
                                         &param,
                                     );
                                     Ok(SoundCoreEvent::ParamChange {

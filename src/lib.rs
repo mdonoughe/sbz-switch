@@ -6,10 +6,6 @@
 //!
 //! For an even-lower-level API, see [`mmdeviceapi`](../winapi/um/mmdeviceapi/index.html) and [`ctsndcr`](ctsndcr/index.html).
 
-extern crate indexmap;
-extern crate regex;
-#[macro_use]
-extern crate slog;
 #[macro_use]
 extern crate winapi;
 
@@ -26,6 +22,7 @@ use futures::task::Context;
 use futures::{Stream, StreamExt};
 
 use indexmap::IndexMap;
+use tracing::{debug, error, warn, debug_span, trace_span};
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -33,8 +30,6 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::pin::Pin;
 use std::task::Poll;
-
-use slog::Logger;
 
 use crate::com::event::ComEventIterator;
 use crate::media::{DeviceEnumerator, Endpoint, VolumeEvents, VolumeNotification};
@@ -82,16 +77,17 @@ pub struct DeviceInfo {
 /// # Examples
 ///
 /// ```
-/// for device in list_devices(logger.clone())? {
+/// for device in list_devices()? {
 ///     println!("{}: {}", device.id, device.description);
 /// }
 /// ```
-pub fn list_devices(logger: &Logger) -> Result<Vec<DeviceInfo>, Box<dyn Error>> {
-    let endpoints = DeviceEnumerator::with_logger(logger.clone())?.get_active_audio_endpoints()?;
+pub fn list_devices() -> Result<Vec<DeviceInfo>, Box<dyn Error>> {
+    let endpoints = DeviceEnumerator::new()?.get_active_audio_endpoints()?;
     let mut result = Vec::with_capacity(endpoints.len());
     for endpoint in endpoints {
         let id = endpoint.id()?;
-        debug!(logger, "Querying endpoint {}...", id);
+        let span = debug_span!("Querying endpoint {id}...");
+        let _span = span.enter();
         result.push(DeviceInfo {
             id,
             interface: endpoint.interface()?,
@@ -101,8 +97,8 @@ pub fn list_devices(logger: &Logger) -> Result<Vec<DeviceInfo>, Box<dyn Error>> 
     Ok(result)
 }
 
-fn get_endpoint(logger: Logger, device_id: Option<&OsStr>) -> Result<Endpoint, Win32Error> {
-    let enumerator = DeviceEnumerator::with_logger(logger)?;
+fn get_endpoint(device_id: Option<&OsStr>) -> Result<Endpoint, Win32Error> {
+    let enumerator = DeviceEnumerator::new()?;
     Ok(match device_id {
         Some(id) => enumerator.get_endpoint(id)?,
         None => enumerator.get_default_audio_endpoint()?,
@@ -116,20 +112,19 @@ fn get_endpoint(logger: Logger, device_id: Option<&OsStr>) -> Result<Endpoint, W
 /// # Examples
 ///
 /// ```
-/// println!("{:?}", dump(logger.clone(), None)?);
+/// println!("{:?}", dump(None)?);
 /// ```
-pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> {
-    let endpoint = get_endpoint(logger.clone(), device_id)?;
+pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> {
+    let endpoint = get_endpoint(device_id)?;
 
     let endpoint_output = EndpointConfiguration {
         volume: Some(endpoint.get_volume()?),
     };
 
     let id = endpoint.id()?;
-    debug!(logger, "Found device {}", id);
+    debug!("Found device {id}");
     let clsid = endpoint.clsid()?;
     debug!(
-        logger,
         "Found clsid {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
         clsid.Data1,
         clsid.Data2,
@@ -143,27 +138,29 @@ pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Configuration,
         clsid.Data4[6],
         clsid.Data4[7]
     );
-    let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
+    let core = SoundCore::for_device(&clsid, &id)?;
 
     let mut context_output = IndexMap::new();
     for feature in core.features(0) {
         let feature = feature?;
-        debug!(logger, "{:08x} {}", feature.id, feature.description);
+        let feature_span = debug_span!("feature {id} {description}", id = feature.id, description = %feature.description);
+        let _feature_span = feature_span.enter();
 
         let mut feature_output = IndexMap::new();
         for parameter in feature.parameters() {
             let parameter = parameter?;
-            debug!(logger, "  {} {}", parameter.id, parameter.description);
-            debug!(logger, "    attributes: {}", parameter.attributes);
+            let parameter_span = debug_span!("parameter {id} {description}", id = parameter.id, description = %parameter.description);
+            let _parameter_span = parameter_span.enter();
+            debug!("attributes: {attributes}", attributes = parameter.attributes);
             if let Some(size) = parameter.size {
-                debug!(logger, "    size:       {}", size);
+                debug!("size: {size}");
             }
             // skip read-only parameters
             if parameter.attributes & 1 == 0 {
                 match parameter.kind {
                     1 => {
                         let value = parameter.get()?;
-                        debug!(logger, "    value:      {:?}", value);
+                        debug!("value: {value:?}");
                         match value {
                             SoundCoreParamValue::None => {}
                             _ => {
@@ -173,10 +170,10 @@ pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Configuration,
                     }
                     0 | 2 | 3 => {
                         let value = parameter.get()?;
-                        debug!(logger, "    minimum:    {:?}", parameter.min_value);
-                        debug!(logger, "    maximum:    {:?}", parameter.max_value);
-                        debug!(logger, "    step:       {:?}", parameter.step_size);
-                        debug!(logger, "    value:      {:?}", value);
+                        debug!("minimum:    {min_value:?}", min_value = parameter.min_value);
+                        debug!("maximum:    {max_value:?}", max_value = parameter.max_value);
+                        debug!("step:       {step_size:?}", step_size = parameter.step_size);
+                        debug!("value:      {value:?}");
                         match value {
                             SoundCoreParamValue::None => {}
                             _ => {
@@ -186,7 +183,7 @@ pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Configuration,
                     }
                     5 => {}
                     _ => {
-                        debug!(logger, "     kind:      {}", parameter.kind);
+                        debug!("kind:      {kind}", kind = parameter.kind);
                     }
                 }
             }
@@ -221,20 +218,19 @@ pub fn dump(logger: &Logger, device_id: Option<&OsStr>) -> Result<Configuration,
 ///     endpoint: None,
 ///     creative,
 /// };
-/// set(logger.clone(), None, &configuration, true);
+/// set(None, &configuration, true);
 /// ```
 pub fn set(
-    logger: &Logger,
     device_id: Option<&OsStr>,
     configuration: &Configuration,
     mute: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let endpoint = get_endpoint(logger.clone(), device_id)?;
+    let endpoint = get_endpoint(device_id)?;
     let mute_unmute = mute && !endpoint.get_mute()?;
     if mute_unmute {
         endpoint.set_mute(true)?;
     }
-    let result = set_internal(logger, configuration, &endpoint);
+    let result = set_internal(configuration, &endpoint);
     if mute_unmute {
         endpoint.set_mute(false)?;
     }
@@ -249,18 +245,15 @@ pub fn set(
 /// # Examples
 ///
 /// ```
-/// for event in watch(logger.clone(), None) {
+/// for event in watch(None) {
 ///     println!("{:?}", event);
 /// }
 /// ```
-pub fn watch(
-    logger: &Logger,
-    device_id: Option<&OsStr>,
-) -> Result<SoundCoreEventIterator, Box<dyn Error>> {
-    let endpoint = get_endpoint(logger.clone(), device_id)?;
+pub fn watch(device_id: Option<&OsStr>) -> Result<SoundCoreEventIterator, Box<dyn Error>> {
+    let endpoint = get_endpoint(device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
-    let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
+    let core = SoundCore::for_device(&clsid, &id)?;
 
     Ok(core.events()?)
 }
@@ -319,18 +312,17 @@ impl Iterator for SoundCoreAndVolumeEventIterator {
 /// # Examples
 ///
 /// ```
-/// for event in watch_with_volume(logger.clone(), None) {
+/// for event in watch_with_volume(None) {
 ///     println!("{:?}", event);
 /// }
 /// ```
 pub fn watch_with_volume(
-    logger: &Logger,
     device_id: Option<&OsStr>,
 ) -> Result<SoundCoreAndVolumeEventIterator, Box<dyn Error>> {
-    let endpoint = get_endpoint(logger.clone(), device_id)?;
+    let endpoint = get_endpoint(device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
-    let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
+    let core = SoundCore::for_device(&clsid, &id)?;
 
     let core_events = core.event_stream()?;
     let volume_events = endpoint.event_stream()?;
@@ -411,17 +403,12 @@ fn coerce_soundcore(
     }
 }
 
-fn set_internal(
-    logger: &Logger,
-    configuration: &Configuration,
-    endpoint: &Endpoint,
-) -> Result<(), Box<dyn Error>> {
+fn set_internal(configuration: &Configuration, endpoint: &Endpoint) -> Result<(), Box<dyn Error>> {
     if let Some(ref creative) = configuration.creative {
         let id = endpoint.id()?;
-        debug!(logger, "Found device {}", id);
+        debug!("Found device {id}");
         let clsid = endpoint.clsid()?;
         debug!(
-            logger,
             "Found clsid \
              {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
             clsid.Data1,
@@ -436,7 +423,7 @@ fn set_internal(
             clsid.Data4[6],
             clsid.Data4[7]
         );
-        let core = SoundCore::for_device(&clsid, &id, logger.clone())?;
+        let core = SoundCore::for_device(&clsid, &id)?;
 
         let mut unhandled_feature_names = BTreeSet::<&str>::new();
         for (key, _) in creative.iter() {
@@ -445,7 +432,8 @@ fn set_internal(
 
         for feature in core.features(0) {
             let feature = feature?;
-            trace!(logger, "Looking for {} settings...", feature.description);
+            let feature_span = trace_span!("Looking for {feature} settings...", feature = %feature.description);
+            let _feature_span = feature_span.enter();
             if let Some(feature_table) = creative.get(&feature.description) {
                 unhandled_feature_names.remove(&feature.description[..]);
                 let mut unhandled_parameter_names = BTreeSet::<&str>::new();
@@ -455,36 +443,29 @@ fn set_internal(
 
                 for parameter in feature.parameters() {
                     let mut parameter = parameter?;
-                    trace!(
-                        logger,
-                        "Looking for {}.{} settings...",
-                        feature.description,
-                        parameter.description
-                    );
+                    let parameter_span = trace_span!("Looking for {parameter} settings...", parameter = %parameter.description);
+                    let _parameter_span = parameter_span.enter();
                     if let Some(value) = feature_table.get(&parameter.description) {
                         unhandled_parameter_names.remove(&parameter.description[..]);
                         let value = &coerce_soundcore(&feature, &parameter, value)?;
                         if let Err(error) = parameter.set(value) {
                             error!(
-                                logger,
-                                "Could not set parameter {}.{}: {}",
-                                feature.description,
-                                parameter.description,
-                                error
+                                "Could not set parameter {feature}.{parameter}: {error}",
+                                feature = feature.description, parameter = parameter.description,
                             );
                         }
                     }
                 }
                 for unhandled in unhandled_parameter_names {
                     warn!(
-                        logger,
-                        "Could not find parameter {}.{}", feature.description, unhandled
+                        "Could not find parameter {feature}.{parameter}",
+                        feature = feature.description, parameter = unhandled,
                     );
                 }
             }
         }
         for unhandled in unhandled_feature_names {
-            warn!(logger, "Could not find feature {}", unhandled);
+            warn!("Could not find feature {feature}", feature = unhandled);
         }
     }
     if let Some(ref endpoint_config) = configuration.endpoint {

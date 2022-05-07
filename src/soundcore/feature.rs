@@ -1,7 +1,5 @@
 use std::str;
 
-use slog::Logger;
-
 use crate::com::ComObject;
 use crate::ctsndcr::{FeatureInfo, ISoundCore};
 
@@ -11,7 +9,6 @@ use super::SoundCoreParameterIterator;
 #[derive(Debug)]
 pub struct SoundCoreFeature {
     core: ComObject<ISoundCore>,
-    logger: Logger,
     context: u32,
     /// A numeric ID of the feature
     pub id: u32,
@@ -22,12 +19,7 @@ pub struct SoundCoreFeature {
 }
 
 impl SoundCoreFeature {
-    pub(crate) fn new(
-        core: ComObject<ISoundCore>,
-        logger: Logger,
-        context: u32,
-        info: &FeatureInfo,
-    ) -> Self {
+    pub(crate) fn new(core: ComObject<ISoundCore>, context: u32, info: &FeatureInfo) -> Self {
         let description_length = info
             .description
             .iter()
@@ -40,7 +32,6 @@ impl SoundCoreFeature {
             .unwrap_or(info.version.len());
         Self {
             core,
-            logger,
             context,
             id: info.feature_id,
             description: str::from_utf8(&info.description[0..description_length])
@@ -55,7 +46,6 @@ impl SoundCoreFeature {
     pub fn parameters(&self) -> SoundCoreParameterIterator {
         SoundCoreParameterIterator::new(
             self.core.clone(),
-            self.logger.clone(),
             self.context,
             self.id,
             self.description.clone(),

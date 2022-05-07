@@ -3,8 +3,7 @@ use std::mem::MaybeUninit;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 
-use slog::Logger;
-
+use tracing::instrument;
 use winapi::shared::guiddef::GUID;
 use winapi::um::combaseapi::{CoCreateInstance, CLSCTX_ALL};
 use winapi::Interface;
@@ -19,9 +18,9 @@ use super::{SoundCoreError, SoundCoreFeatureIterator};
 /// Provides control of Creative SoundBlaster features.
 ///
 /// This is a wrapper around `ISoundCore`.
+#[derive(Debug)]
 pub struct SoundCore {
     sound_core: ComObject<ISoundCore>,
-    logger: Logger,
 }
 
 impl SoundCore {
@@ -32,18 +31,14 @@ impl SoundCore {
     ///
     /// `device_id` is the Windows device ID, and can be obtained from
     /// [`Endpoint.id()`](../media/Endpoint.t.html#method.id).
-    pub fn for_device(
-        clsid: &GUID,
-        device_id: &str,
-        logger: Logger,
-    ) -> Result<SoundCore, SoundCoreError> {
+    pub fn for_device(clsid: &GUID, device_id: &str) -> Result<SoundCore, SoundCoreError> {
         let _scope = ComScope::begin();
-        let mut core = SoundCore::new(clsid, logger)?;
+        let mut core = SoundCore::new(clsid)?;
         core.bind_hardware(device_id)?;
         Ok(core)
     }
     #[allow(clippy::new_ret_no_self)]
-    fn new(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
+    fn new(clsid: &GUID) -> Result<SoundCore, SoundCoreError> {
         unsafe {
             let mut sc = MaybeUninit::<*mut ISoundCore>::uninit();
             check(CoCreateInstance(
@@ -55,12 +50,11 @@ impl SoundCore {
             ))?;
             Ok(SoundCore {
                 sound_core: ComObject::take(sc.assume_init()),
-                logger,
             })
         }
     }
+    #[instrument(level = "trace")]
     fn bind_hardware(&mut self, id: &str) -> Result<(), Win32Error> {
-        trace!(self.logger, "Binding SoundCore to {}...", id);
         let mut buffer = [0; 260];
         for c in OsStr::new(id).encode_wide().enumerate() {
             buffer[c.0] = c.1;
@@ -74,7 +68,7 @@ impl SoundCore {
     }
     /// Returns an iterator over the features exposed by a device.
     pub fn features(&self, context: u32) -> SoundCoreFeatureIterator {
-        SoundCoreFeatureIterator::new(self.sound_core.clone(), self.logger.clone(), context)
+        SoundCoreFeatureIterator::new(self.sound_core.clone(), context)
     }
     /// Returns an iterator over events produced by the SoundCore API.
     ///
@@ -103,7 +97,6 @@ impl SoundCore {
             SoundCoreEvents::new(
                 ComObject::take(event_notify.assume_init()),
                 self.sound_core.clone(),
-                self.logger.clone(),
             )
         }
     }

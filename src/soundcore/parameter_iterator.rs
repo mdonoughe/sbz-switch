@@ -1,7 +1,6 @@
 use std::mem;
 
-use slog::Logger;
-
+use tracing::trace_span;
 use winapi::shared::winerror::E_FAIL;
 
 use crate::com::ComObject;
@@ -13,7 +12,6 @@ use crate::SoundCoreParameter;
 /// Iterates over the parameters of a feature.
 pub struct SoundCoreParameterIterator {
     target: ComObject<ISoundCore>,
-    logger: Logger,
     context: u32,
     feature_id: u32,
     feature_description: String,
@@ -23,14 +21,12 @@ pub struct SoundCoreParameterIterator {
 impl SoundCoreParameterIterator {
     pub(crate) fn new(
         target: ComObject<ISoundCore>,
-        logger: Logger,
         context: u32,
         feature_id: u32,
         feature_description: String,
     ) -> Self {
         Self {
             target,
-            logger,
             context,
             feature_id,
             feature_description,
@@ -45,13 +41,13 @@ impl Iterator for SoundCoreParameterIterator {
     fn next(&mut self) -> Option<Result<SoundCoreParameter, Win32Error>> {
         unsafe {
             let mut info: ParamInfo = mem::zeroed();
-            trace!(
-                self.logger,
-                "Fetching parameter .{}.{}[{}]...",
-                self.context,
-                self.feature_description,
-                self.index
+            let span = trace_span!(
+                "Fetching parameter .{context}.{feature}[{index}]...",
+                context = self.context,
+                feature = %self.feature_description,
+                index = self.index,
             );
+            let _span = span.enter();
             match check(self.target.EnumParams(
                 self.context,
                 self.index,
@@ -63,21 +59,13 @@ impl Iterator for SoundCoreParameterIterator {
                 Err(Win32Error { code, .. }) if code == E_FAIL => return None,
                 Err(error) => return Some(Err(error)),
             };
-            trace!(
-                self.logger,
-                "Got parameter .{}.{}[{}] = {:?}",
-                self.context,
-                self.feature_description,
-                self.index,
-                info
-            );
+            span.record("info", &tracing::field::debug(&info));
             self.index += 1;
             match info.param.feature {
                 0 => None,
                 _ => Some(Ok(SoundCoreParameter::new(
                     self.target.clone(),
                     self.feature_description.clone(),
-                    self.logger.clone(),
                     &info,
                 ))),
             }

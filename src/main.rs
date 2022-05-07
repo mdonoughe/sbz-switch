@@ -1,12 +1,12 @@
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate slog;
 
 use clap::Command;
 use clap::{Arg, ArgMatches};
 
 use indexmap::IndexMap;
+use tracing::{debug, error};
+use tracing_subscriber::filter::EnvFilter;
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -18,11 +18,6 @@ use std::io::BufReader;
 use std::iter::IntoIterator;
 use std::mem;
 use std::str::FromStr;
-
-use slog::Logger;
-use sloggers::terminal::{Destination, TerminalLoggerBuilder};
-use sloggers::types::Severity;
-use sloggers::Build;
 
 use toml::value::Value;
 
@@ -137,27 +132,26 @@ fn run() -> i32 {
         )
         .get_matches();
 
-    let mut builder = TerminalLoggerBuilder::new();
-    builder.level(Severity::Debug);
-    builder.destination(Destination::Stderr);
-    let logger = builder.build().unwrap();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
     let result = match matches.subcommand().unwrap() {
-        ("list-devices", sub_m) => list_devices(&logger, sub_m),
-        ("dump", sub_m) => dump(&logger, sub_m),
-        ("apply", sub_m) => apply(&logger, sub_m),
-        ("set", sub_m) => set(&logger, sub_m),
-        ("watch", sub_m) => watch(&logger, sub_m),
+        ("list-devices", sub_m) => list_devices(sub_m),
+        ("dump", sub_m) => dump(sub_m),
+        ("apply", sub_m) => apply(sub_m),
+        ("set", sub_m) => set(sub_m),
+        ("watch", sub_m) => watch(sub_m),
         _ => unreachable!(),
     };
 
     match result {
         Ok(()) => {
-            debug!(logger, "Completed successfully");
+            debug!("Completed successfully");
             0
         }
         Err(error) => {
-            crit!(logger, "Unexpected error: {}", error);
+            error!("Unexpected error: {error}");
             1
         }
     }
@@ -570,8 +564,8 @@ impl From<DeviceInfo> for SerializableDeviceInfo {
     }
 }
 
-fn list_devices(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let devices: Vec<_> = sbz_switch::list_devices(logger)?
+fn list_devices(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let devices: Vec<_> = sbz_switch::list_devices()?
         .into_iter()
         .map(SerializableDeviceInfo::from)
         .collect();
@@ -585,8 +579,8 @@ fn list_devices(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Err
     Ok(())
 }
 
-fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let table = sbz_switch::dump(logger, matches.value_of_os("device"))?;
+fn dump(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let table = sbz_switch::dump(matches.value_of_os("device"))?;
     let text = format_configuration(&table, matches)?;
     let output = matches.value_of("output");
     match output {
@@ -596,7 +590,7 @@ fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+fn apply(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let mut text = String::new();
     match matches.value_of("file") {
         Some(name) => BufReader::new(File::open(name)?).read_to_string(&mut text)?,
@@ -607,7 +601,7 @@ fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     mem::drop(text);
 
     let mute = matches.value_of_t("mute")?;
-    sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
+    sbz_switch::set(matches.value_of_os("device"), &configuration, mute)
 }
 
 struct Collator<I, F> {
@@ -652,7 +646,7 @@ fn collate_set_values<I, F>(iter: Option<I>, f: F) -> Collator<I, F> {
     Collator { iter, f }
 }
 
-fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+fn set(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let mut creative_table = IndexMap::<String, IndexMap<String, SoundCoreParamValue>>::new();
 
     for (feature, parameter, value) in collate_set_values(matches.values_of("bool"), |s| {
@@ -692,11 +686,11 @@ fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     };
 
     let mute = matches.value_of_t("mute")?;
-    sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
+    sbz_switch::set(matches.value_of_os("device"), &configuration, mute)
 }
 
-fn watch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    for event in sbz_switch::watch_with_volume(logger, matches.value_of_os("device"))? {
+fn watch(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    for event in sbz_switch::watch_with_volume(matches.value_of_os("device"))? {
         println!("{:?}", event);
     }
     Ok(())

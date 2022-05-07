@@ -16,7 +16,7 @@ use std::slice;
 use std::sync::atomic::{self, AtomicUsize, Ordering};
 
 use regex::Regex;
-use slog::Logger;
+use tracing::{info, instrument};
 use winapi::ctypes::c_void;
 use winapi::shared::guiddef::GUID;
 use winapi::shared::guiddef::{IsEqualIID, REFIID};
@@ -97,16 +97,14 @@ fn parse_guid(src: &str) -> Result<GUID, Box<dyn Error>> {
 /// Represents an audio device.
 pub struct Endpoint {
     device: ComObject<IMMDevice>,
-    logger: Logger,
     volume: Lazy<Result<ComObject<IAudioEndpointVolume>, Win32Error>>,
     properties: Lazy<Result<PropertyStore, Win32Error>>,
 }
 
 impl Endpoint {
-    fn new(device: ComObject<IMMDevice>, logger: Logger) -> Self {
+    fn new(device: ComObject<IMMDevice>) -> Self {
         Self {
             device,
-            logger,
             volume: Lazy::new(),
             properties: Lazy::new(),
         }
@@ -114,9 +112,9 @@ impl Endpoint {
     /// Gets the ID of the endpoint.
     ///
     /// See [Endpoint ID Strings](https://docs.microsoft.com/en-us/windows/desktop/CoreAudio/endpoint-id-strings).
+    #[instrument(level = "trace")]
     pub fn id(&self) -> Result<String, Win32Error> {
         unsafe {
-            trace!(self.logger, "Getting device ID...");
             let mut raw_id = MaybeUninit::uninit();
             check(self.device.GetId(raw_id.as_mut_ptr()))?;
             let raw_id = raw_id.assume_init();
@@ -128,19 +126,16 @@ impl Endpoint {
             Ok(str.to_string_lossy().into_owned())
         }
     }
+    #[instrument(level = "trace")]
     fn property_store(&self) -> Result<&PropertyStore, Win32Error> {
         self.properties
             .get_or_create(|| unsafe {
-                trace!(self.logger, "Opening PropertyStore...");
                 let mut property_store = MaybeUninit::uninit();
                 check(
                     self.device
                         .OpenPropertyStore(STGM_READ, property_store.as_mut_ptr()),
                 )?;
-                Ok(PropertyStore(
-                    ComObject::take(property_store.assume_init()),
-                    self.logger.clone(),
-                ))
+                Ok(PropertyStore(ComObject::take(property_store.assume_init())))
             })
             .as_ref()
             .map_err(|e| e.clone())
@@ -190,20 +185,19 @@ impl Endpoint {
             .clone()
     }
     /// Checks whether the device is already muted.
+    #[instrument(level = "debug")]
     pub fn get_mute(&self) -> Result<bool, Win32Error> {
         unsafe {
-            trace!(self.logger, "Checking if we are muted...");
             let mut mute = 0;
             check(self.volume()?.GetMute(&mut mute))?;
-            debug!(self.logger, "Muted = {}", mute);
             Ok(mute != 0)
         }
     }
     /// Mutes or unmutes the device.
+    #[instrument]
     pub fn set_mute(&self, mute: bool) -> Result<(), Win32Error> {
         unsafe {
             let mute = if mute { 1 } else { 0 };
-            info!(self.logger, "Setting muted to {}...", mute);
             check(self.volume()?.SetMute(mute, ptr::null_mut()))?;
             Ok(())
         }
@@ -213,9 +207,10 @@ impl Endpoint {
     /// Volumes range from 0.0 to 1.0.
     ///
     /// Volume can be controlled independent of muting.
+    #[instrument]
     pub fn set_volume(&self, volume: f32) -> Result<(), Win32Error> {
         unsafe {
-            info!(self.logger, "Setting volume to {}...", volume);
+            info!("Setting volume to {volume}...");
             check(
                 self.volume()?
                     .SetMasterVolumeLevelScalar(volume, ptr::null_mut()),
@@ -224,21 +219,29 @@ impl Endpoint {
         }
     }
     /// Gets the volume of the device.
+    #[instrument(level = "debug", fields(volume))]
     pub fn get_volume(&self) -> Result<f32, Win32Error> {
         unsafe {
-            debug!(self.logger, "Getting volume...");
             let mut volume = MaybeUninit::uninit();
             check(
                 self.volume()?
                     .GetMasterVolumeLevelScalar(volume.as_mut_ptr()),
             )?;
             let volume = volume.assume_init();
-            debug!(self.logger, "volume = {}", volume);
+            tracing::Span::current().record("volume", &volume);
             Ok(volume)
         }
     }
     pub(crate) fn event_stream(&self) -> Result<VolumeEvents, Win32Error> {
         VolumeEvents::new(self.volume()?)
+    }
+}
+
+impl fmt::Debug for Endpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Endpoint")
+            .field("device", &self.device)
+            .finish()
     }
 }
 
@@ -281,16 +284,18 @@ impl From<Win32Error> for GetPropertyError {
     }
 }
 
-struct PropertyStore(ComObject<IPropertyStore>, Logger);
+#[derive(Debug)]
+struct PropertyStore(ComObject<IPropertyStore>);
 
 impl PropertyStore {
+    #[instrument(level = "trace", skip(key), fields(key.fmtid, key.pid))]
     unsafe fn get_value(&self, key: &PROPERTYKEY) -> Result<PROPVARIANT, Win32Error> {
-        trace!(self.1, "Getting property...");
         let mut property_value = MaybeUninit::uninit();
         check(self.0.GetValue(key, property_value.as_mut_ptr()))?;
         Ok(property_value.assume_init())
     }
     #[allow(clippy::cast_ptr_alignment)]
+    #[instrument(level = "trace", skip(key), fields(key.fmtid, key.pid, r#type, value))]
     fn get_string_value(&self, key: &PROPERTYKEY) -> Result<Option<String>, GetPropertyError> {
         unsafe {
             let mut property_value = self.get_value(key)?;
@@ -313,22 +318,23 @@ impl PropertyStore {
             });
             PropVariantClear(&mut property_value);
             let str = str.unwrap();
-            trace!(self.1, "Returned variant has value {}", &str);
+            tracing::Span::current().record("value", &str.as_str());
             Ok(Some(str))
         }
     }
 }
 
 /// Provides access to the devices available in the current Windows session.
-pub struct DeviceEnumerator(ComObject<IMMDeviceEnumerator>, Logger);
+#[derive(Debug)]
+pub struct DeviceEnumerator(ComObject<IMMDeviceEnumerator>);
 
 impl DeviceEnumerator {
-    /// Creates a new device enumerator with the provided logger.
-    pub fn with_logger(logger: Logger) -> Result<Self, Win32Error> {
+    /// Creates a new device enumerator.
+    #[instrument(level = "trace")]
+    pub fn new() -> Result<Self, Win32Error> {
         unsafe {
             let _scope = ComScope::begin();
             let mut enumerator = MaybeUninit::<*mut IMMDeviceEnumerator>::uninit();
-            trace!(logger, "Creating DeviceEnumerator...");
             check(CoCreateInstance(
                 &CLSID_MMDeviceEnumerator,
                 ptr::null_mut(),
@@ -336,18 +342,14 @@ impl DeviceEnumerator {
                 &IMMDeviceEnumerator::uuidof(),
                 enumerator.as_mut_ptr() as *mut _,
             ))?;
-            trace!(logger, "Created DeviceEnumerator");
-            Ok(DeviceEnumerator(
-                ComObject::take(enumerator.assume_init()),
-                logger,
-            ))
+            Ok(DeviceEnumerator(ComObject::take(enumerator.assume_init())))
         }
     }
     /// Gets all active audio outputs.
     #[allow(clippy::unnecessary_mut_passed)]
+    #[instrument(level = "trace")]
     pub fn get_active_audio_endpoints(&self) -> Result<Vec<Endpoint>, Win32Error> {
         unsafe {
-            trace!(self.1, "Getting active endpoints...");
             let mut collection = MaybeUninit::uninit();
             check(self.0.EnumAudioEndpoints(
                 eRender,
@@ -361,10 +363,7 @@ impl DeviceEnumerator {
             for i in 0..count {
                 let mut device = MaybeUninit::uninit();
                 check((*collection).Item(i, device.as_mut_ptr()))?;
-                result.push(Endpoint::new(
-                    ComObject::take(device.assume_init()),
-                    self.1.clone(),
-                ))
+                result.push(Endpoint::new(ComObject::take(device.assume_init())))
             }
             Ok(result)
         }
@@ -374,31 +373,25 @@ impl DeviceEnumerator {
     /// There are multiple default audio outputs in Windows.
     /// This function gets the device that would be used if the current application
     /// were to play music or sound effects (as opposed to VOIP audio).
+    #[instrument(level = "trace")]
     pub fn get_default_audio_endpoint(&self) -> Result<Endpoint, Win32Error> {
         unsafe {
-            trace!(self.1, "Getting default endpoint...");
             let mut device = MaybeUninit::uninit();
             check(
                 self.0
                     .GetDefaultAudioEndpoint(eRender, eConsole, device.as_mut_ptr()),
             )?;
-            Ok(Endpoint::new(
-                ComObject::take(device.assume_init()),
-                self.1.clone(),
-            ))
+            Ok(Endpoint::new(ComObject::take(device.assume_init())))
         }
     }
     /// Get a specific audio endpoint by its ID.
+    #[instrument(level = "trace")]
     pub fn get_endpoint(&self, id: &OsStr) -> Result<Endpoint, Win32Error> {
-        trace!(self.1, "Getting endpoint...");
         let buffer: Vec<_> = id.encode_wide().chain(Some(0)).collect();
         unsafe {
             let mut device = MaybeUninit::uninit();
             check(self.0.GetDevice(buffer.as_ptr(), device.as_mut_ptr()))?;
-            Ok(Endpoint::new(
-                ComObject::take(device.assume_init()),
-                self.1.clone(),
-            ))
+            Ok(Endpoint::new(ComObject::take(device.assume_init())))
         }
     }
 }
