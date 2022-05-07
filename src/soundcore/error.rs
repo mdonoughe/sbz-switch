@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::hresult::Win32Error;
+use crate::media::GetPropertyError;
 
 /// Describes an error that occurred while acting on Creative's SoundCore API.
 #[derive(Debug)]
@@ -33,5 +34,14 @@ impl Error for SoundCoreError {
 impl From<Win32Error> for SoundCoreError {
     fn from(err: Win32Error) -> SoundCoreError {
         SoundCoreError::Win32(err)
+    }
+}
+
+impl From<GetPropertyError> for SoundCoreError {
+    fn from(err: GetPropertyError) -> SoundCoreError {
+        match err {
+            GetPropertyError::UnexpectedType(_) => SoundCoreError::NotSupported,
+            GetPropertyError::Win32(inner) => inner.into(),
+        }
     }
 }

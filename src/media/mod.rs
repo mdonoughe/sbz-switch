@@ -22,7 +22,6 @@ use winapi::shared::guiddef::GUID;
 use winapi::shared::guiddef::{IsEqualIID, REFIID};
 use winapi::shared::minwindef::ULONG;
 use winapi::shared::ntdef::HRESULT;
-use winapi::shared::winerror::NTE_NOT_FOUND;
 use winapi::shared::winerror::{E_INVALIDARG, E_NOINTERFACE};
 use winapi::shared::wtypes::{PROPERTYKEY, VARTYPE};
 use winapi::um::combaseapi::CLSCTX_ALL;
@@ -46,7 +45,7 @@ pub use self::event::VolumeNotification;
 use crate::com::{ComObject, ComScope};
 use crate::hresult::{check, Win32Error};
 use crate::lazy::Lazy;
-use crate::soundcore::{SoundCoreError, PKEY_SOUNDCORECTL_CLSID};
+use crate::soundcore::{SoundCoreError, PKEY_SOUNDCORECTL_CLSID_AE5, PKEY_SOUNDCORECTL_CLSID_Z};
 use crate::winapiext::{PKEY_DeviceInterface_FriendlyName, PKEY_Device_DeviceDesc};
 
 fn parse_guid(src: &str) -> Result<GUID, Box<dyn Error>> {
@@ -150,31 +149,30 @@ impl Endpoint {
     ///
     /// This allows discovery of a SoundCore implementation for devices that support it.
     pub fn clsid(&self) -> Result<GUID, SoundCoreError> {
-        match self
-            .property_store()?
-            .get_string_value(&PKEY_SOUNDCORECTL_CLSID)
-        {
-            Ok(str) => parse_guid(&str).or(Err(SoundCoreError::NotSupported)),
-            Err(GetPropertyError::UnexpectedType(_)) => Err(SoundCoreError::NotSupported),
-            Err(GetPropertyError::Win32(ref error)) if error.code == NTE_NOT_FOUND => {
-                Err(SoundCoreError::NotSupported)
-            }
-            Err(GetPropertyError::Win32(error)) => Err(SoundCoreError::Win32(error)),
-        }
+        let store = self
+            .property_store()?;
+        let value = match store.get_string_value(&PKEY_SOUNDCORECTL_CLSID_AE5)? {
+            Some(value) => value,
+            None => store.get_string_value(&PKEY_SOUNDCORECTL_CLSID_Z)?.ok_or(SoundCoreError::NotSupported)?,
+        };
+        parse_guid(&value).or(Err(SoundCoreError::NotSupported))
     }
+
     /// Gets the friendly name of the audio interface (sound adapter).
     ///
     /// See [Core Audio Properties: Device Properties](https://docs.microsoft.com/en-us/windows/desktop/coreaudio/core-audio-properties#device-properties).
     pub fn interface(&self) -> Result<String, GetPropertyError> {
         self.property_store()?
-            .get_string_value(&PKEY_DeviceInterface_FriendlyName)
+            .get_string_value(&PKEY_DeviceInterface_FriendlyName)?
+            .ok_or(GetPropertyError::NOT_FOUND)
     }
     /// Gets a description of the audio endpoint (speakers, headphones, etc).
     ///
     /// See [Core Audio Properties: Device Properties](https://docs.microsoft.com/en-us/windows/desktop/coreaudio/core-audio-properties#device-properties).
     pub fn description(&self) -> Result<String, GetPropertyError> {
         self.property_store()?
-            .get_string_value(&PKEY_Device_DeviceDesc)
+            .get_string_value(&PKEY_Device_DeviceDesc)?
+            .ok_or(GetPropertyError::NOT_FOUND)
     }
     fn volume(&self) -> Result<ComObject<IAudioEndpointVolume>, Win32Error> {
         self.volume
@@ -252,6 +250,10 @@ pub enum GetPropertyError {
     UnexpectedType(VARTYPE),
 }
 
+impl GetPropertyError {
+    pub(crate) const NOT_FOUND: GetPropertyError = GetPropertyError::UnexpectedType(0);
+}
+
 impl fmt::Display for GetPropertyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -288,10 +290,14 @@ impl PropertyStore {
         Ok(property_value.assume_init())
     }
     #[allow(clippy::cast_ptr_alignment)]
-    fn get_string_value(&self, key: &PROPERTYKEY) -> Result<String, GetPropertyError> {
+    fn get_string_value(&self, key: &PROPERTYKEY) -> Result<Option<String>, GetPropertyError> {
         unsafe {
             let mut property_value = self.get_value(key)?;
             trace!(self.1, "Returned variant has type {}", property_value.vt);
+            // VT_EMPTY
+            if property_value.vt == 0 {
+                return Ok(None);
+            }
             // VT_LPWSTR
             if property_value.vt != 31 {
                 PropVariantClear(&mut property_value);
@@ -307,7 +313,7 @@ impl PropertyStore {
             PropVariantClear(&mut property_value);
             let str = str.unwrap();
             trace!(self.1, "Returned variant has value {}", &str);
-            Ok(str)
+            Ok(Some(str))
         }
     }
 }
