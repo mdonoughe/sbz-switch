@@ -2,11 +2,13 @@
 #![allow(unknown_lints)]
 #![allow(clippy::unreadable_literal)]
 
-use winapi::shared::wtypes::PROPERTYKEY;
+use windows::{core::GUID, Win32::UI::Shell::PropertiesSystem::PROPERTYKEY};
 
-DEFINE_PROPERTYKEY! {PKEY_SOUNDCORECTL_CLSID_Z,
-0xc949c6aa, 0x132b, 0x4511,0xbb, 0x1b, 0x35, 0x26, 0x1a, 0x2a, 0x63, 0x33,
-0}
-DEFINE_PROPERTYKEY! {PKEY_SOUNDCORECTL_CLSID_AE5,
-0xd8570091, 0xaf3f, 0x4615,0x9f, 0xaa, 0xa2, 0x48, 0x45, 0xd1, 0x09, 0x36,
-0}
+pub const PKEY_SOUNDCORECTL_CLSID_Z: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xc949c6aa_132b_4511_bb1b_35261a2a6333),
+    pid: 0,
+};
+pub const PKEY_SOUNDCORECTL_CLSID_AE5: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xd8570091_af3f_4615_9faa_a24845d10936),
+    pid: 0,
+};

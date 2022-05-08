@@ -6,12 +6,8 @@
 //!
 //! For an even-lower-level API, see [`mmdeviceapi`](../winapi/um/mmdeviceapi/index.html) and [`ctsndcr`](ctsndcr/index.html).
 
-#[macro_use]
-extern crate winapi;
-
 mod com;
 pub mod ctsndcr;
-mod hresult;
 mod lazy;
 pub mod media;
 pub mod soundcore;
@@ -22,7 +18,7 @@ use futures::task::Context;
 use futures::{Stream, StreamExt};
 
 use indexmap::IndexMap;
-use tracing::{debug, error, warn, debug_span, trace_span};
+use tracing::{debug, debug_span, error, trace_span, warn};
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -37,8 +33,6 @@ use crate::soundcore::{
     SoundCore, SoundCoreEvent, SoundCoreEventIterator, SoundCoreEvents, SoundCoreFeature,
     SoundCoreParamValue, SoundCoreParameter,
 };
-
-pub use crate::hresult::Win32Error;
 
 #[cfg(not(any(target_arch = "x86", feature = "ctsndcr_ignore_arch")))]
 compile_error!("This crate must be built for x86 for compatibility with sound drivers." +
@@ -97,7 +91,7 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, Box<dyn Error>> {
     Ok(result)
 }
 
-fn get_endpoint(device_id: Option<&OsStr>) -> Result<Endpoint, Win32Error> {
+fn get_endpoint(device_id: Option<&OsStr>) -> windows::core::Result<Endpoint> {
     let enumerator = DeviceEnumerator::new()?;
     Ok(match device_id {
         Some(id) => enumerator.get_endpoint(id)?,
@@ -126,17 +120,17 @@ pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> 
     let clsid = endpoint.clsid()?;
     debug!(
         "Found clsid {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
-        clsid.Data1,
-        clsid.Data2,
-        clsid.Data3,
-        clsid.Data4[0],
-        clsid.Data4[1],
-        clsid.Data4[2],
-        clsid.Data4[3],
-        clsid.Data4[4],
-        clsid.Data4[5],
-        clsid.Data4[6],
-        clsid.Data4[7]
+        clsid.data1,
+        clsid.data2,
+        clsid.data3,
+        clsid.data4[0],
+        clsid.data4[1],
+        clsid.data4[2],
+        clsid.data4[3],
+        clsid.data4[4],
+        clsid.data4[5],
+        clsid.data4[6],
+        clsid.data4[7]
     );
     let core = SoundCore::for_device(&clsid, &id)?;
 
@@ -151,7 +145,10 @@ pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> 
             let parameter = parameter?;
             let parameter_span = debug_span!("parameter {id} {description}", id = parameter.id, description = %parameter.description);
             let _parameter_span = parameter_span.enter();
-            debug!("attributes: {attributes}", attributes = parameter.attributes);
+            debug!(
+                "attributes: {attributes}",
+                attributes = parameter.attributes
+            );
             if let Some(size) = parameter.size {
                 debug!("size: {size}");
             }
@@ -273,7 +270,7 @@ struct SoundCoreAndVolumeEvents {
 }
 
 impl Stream for SoundCoreAndVolumeEvents {
-    type Item = Result<SoundCoreOrVolumeEvent, Win32Error>;
+    type Item = windows::core::Result<SoundCoreOrVolumeEvent>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         if let Poll::Ready(Some(item)) = Pin::new(&mut self.sound_core).poll_next(cx) {
@@ -298,7 +295,7 @@ pub struct SoundCoreAndVolumeEventIterator {
 }
 
 impl Iterator for SoundCoreAndVolumeEventIterator {
-    type Item = Result<SoundCoreOrVolumeEvent, Win32Error>;
+    type Item = windows::core::Result<SoundCoreOrVolumeEvent>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next()
@@ -411,17 +408,17 @@ fn set_internal(configuration: &Configuration, endpoint: &Endpoint) -> Result<()
         debug!(
             "Found clsid \
              {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
-            clsid.Data1,
-            clsid.Data2,
-            clsid.Data3,
-            clsid.Data4[0],
-            clsid.Data4[1],
-            clsid.Data4[2],
-            clsid.Data4[3],
-            clsid.Data4[4],
-            clsid.Data4[5],
-            clsid.Data4[6],
-            clsid.Data4[7]
+            clsid.data1,
+            clsid.data2,
+            clsid.data3,
+            clsid.data4[0],
+            clsid.data4[1],
+            clsid.data4[2],
+            clsid.data4[3],
+            clsid.data4[4],
+            clsid.data4[5],
+            clsid.data4[6],
+            clsid.data4[7]
         );
         let core = SoundCore::for_device(&clsid, &id)?;
 
@@ -432,7 +429,8 @@ fn set_internal(configuration: &Configuration, endpoint: &Endpoint) -> Result<()
 
         for feature in core.features(0) {
             let feature = feature?;
-            let feature_span = trace_span!("Looking for {feature} settings...", feature = %feature.description);
+            let feature_span =
+                trace_span!("Looking for {feature} settings...", feature = %feature.description);
             let _feature_span = feature_span.enter();
             if let Some(feature_table) = creative.get(&feature.description) {
                 unhandled_feature_names.remove(&feature.description[..]);
@@ -451,7 +449,8 @@ fn set_internal(configuration: &Configuration, endpoint: &Endpoint) -> Result<()
                         if let Err(error) = parameter.set(value) {
                             error!(
                                 "Could not set parameter {feature}.{parameter}: {error}",
-                                feature = feature.description, parameter = parameter.description,
+                                feature = feature.description,
+                                parameter = parameter.description,
                             );
                         }
                     }
@@ -459,7 +458,8 @@ fn set_internal(configuration: &Configuration, endpoint: &Endpoint) -> Result<()
                 for unhandled in unhandled_parameter_names {
                     warn!(
                         "Could not find parameter {feature}.{parameter}",
-                        feature = feature.description, parameter = unhandled,
+                        feature = feature.description,
+                        parameter = unhandled,
                     );
                 }
             }

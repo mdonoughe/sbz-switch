@@ -6,7 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 ### Changed
-- Logging uses `tracing`.
+- `slog` has been replaced with `tracing`.
+- `winapi` has been replaced with `windows`.
 
 ## [4.1.0] - 2022-05-15
 ### Added

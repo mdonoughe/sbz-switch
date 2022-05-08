@@ -1,11 +1,10 @@
-use std::mem;
+use std::mem::MaybeUninit;
 
 use tracing::trace_span;
-use winapi::shared::winerror::E_FAIL;
+use windows::Win32::Foundation::E_FAIL;
 
 use crate::com::ComObject;
-use crate::ctsndcr::{FeatureInfo, ISoundCore};
-use crate::hresult::{check, Win32Error};
+use crate::ctsndcr::ISoundCore;
 
 use crate::SoundCoreFeature;
 
@@ -27,20 +26,25 @@ impl SoundCoreFeatureIterator {
 }
 
 impl Iterator for SoundCoreFeatureIterator {
-    type Item = Result<SoundCoreFeature, Win32Error>;
+    type Item = windows::core::Result<SoundCoreFeature>;
 
-    fn next(&mut self) -> Option<Result<SoundCoreFeature, Win32Error>> {
+    fn next(&mut self) -> Option<windows::core::Result<SoundCoreFeature>> {
         unsafe {
-            let mut info: FeatureInfo = mem::zeroed();
-            let span = trace_span!("Fetching feature .{context}[{index}]", context = self.context, index = self.index);
+            let span = trace_span!(
+                "Fetching feature .{context}[{index}]",
+                context = self.context,
+                index = self.index
+            );
             let _span = span.enter();
-            match check(
-                self.target
-                    .EnumFeatures(self.context, self.index, &mut info),
-            ) {
-                Ok(_) => {}
+            let mut info = MaybeUninit::uninit();
+            let info = match self
+                .target
+                .EnumFeatures(self.context, self.index, info.as_mut_ptr())
+                .ok()
+            {
+                Ok(()) => info.assume_init(),
                 // FAIL used to mark end of collection
-                Err(Win32Error { code, .. }) if code == E_FAIL => return None,
+                Err(error) if error.code() == E_FAIL => return None,
                 Err(error) => return Some(Err(error)),
             };
             span.record("info", &tracing::field::debug(&info));

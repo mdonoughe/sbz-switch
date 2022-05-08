@@ -1,11 +1,10 @@
-use std::mem;
+use std::mem::MaybeUninit;
 
 use tracing::trace_span;
-use winapi::shared::winerror::E_FAIL;
+use windows::Win32::Foundation::E_FAIL;
 
 use crate::com::ComObject;
-use crate::ctsndcr::{ISoundCore, ParamInfo};
-use crate::hresult::{check, Win32Error};
+use crate::ctsndcr::ISoundCore;
 
 use crate::SoundCoreParameter;
 
@@ -36,11 +35,10 @@ impl SoundCoreParameterIterator {
 }
 
 impl Iterator for SoundCoreParameterIterator {
-    type Item = Result<SoundCoreParameter, Win32Error>;
+    type Item = windows::core::Result<SoundCoreParameter>;
 
-    fn next(&mut self) -> Option<Result<SoundCoreParameter, Win32Error>> {
+    fn next(&mut self) -> Option<windows::core::Result<SoundCoreParameter>> {
         unsafe {
-            let mut info: ParamInfo = mem::zeroed();
             let span = trace_span!(
                 "Fetching parameter .{context}.{feature}[{index}]...",
                 context = self.context,
@@ -48,15 +46,15 @@ impl Iterator for SoundCoreParameterIterator {
                 index = self.index,
             );
             let _span = span.enter();
-            match check(self.target.EnumParams(
-                self.context,
-                self.index,
-                self.feature_id,
-                &mut info,
-            )) {
-                Ok(_) => {}
+            let mut info = MaybeUninit::uninit();
+            let info = match self
+                .target
+                .EnumParams(self.context, self.index, self.feature_id, info.as_mut_ptr())
+                .ok()
+            {
+                Ok(()) => info.assume_init(),
                 // FAIL used to mark end of collection
-                Err(Win32Error { code, .. }) if code == E_FAIL => return None,
+                Err(error) if error.code() == E_FAIL => return None,
                 Err(error) => return Some(Err(error)),
             };
             span.record("info", &tracing::field::debug(&info));

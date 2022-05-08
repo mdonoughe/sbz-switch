@@ -2,13 +2,10 @@ pub mod event;
 
 use std::fmt;
 use std::ops::Deref;
-use std::ptr::{null_mut, NonNull};
+use std::ptr::null_mut;
 
-use winapi::um::combaseapi::{CoInitializeEx, CoUninitialize};
-use winapi::um::objbase::COINIT_APARTMENTTHREADED;
-use winapi::um::unknwnbase::IUnknown;
-
-use crate::hresult::{check, Win32Error};
+use windows::core::Interface;
+use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 
 /// Prepares the current thread for running COM by calling CoInitializeEx.
 ///
@@ -23,8 +20,8 @@ use crate::hresult::{check, Win32Error};
 /// // do COM things
 /// uninitialize_com();
 /// ```
-pub fn initialize_com() -> Result<(), Win32Error> {
-    unsafe { check(CoInitializeEx(null_mut(), COINIT_APARTMENTTHREADED)).and(Ok(())) }
+pub fn initialize_com() -> windows::core::Result<()> {
+    unsafe { CoInitializeEx(null_mut(), COINIT_APARTMENTTHREADED) }
 }
 
 /// Unconfigures COM for the current thread by calling CoUninitialize.
@@ -39,7 +36,7 @@ pub fn uninitialize_com() {
 pub(crate) struct ComScope {}
 
 impl ComScope {
-    pub fn begin() -> Result<Self, Win32Error> {
+    pub fn begin() -> windows::core::Result<Self> {
         initialize_com()?;
         Ok(Self {})
     }
@@ -53,19 +50,19 @@ impl Drop for ComScope {
 
 pub(crate) struct ComObject<T>
 where
-    T: Deref<Target = IUnknown>,
+    T: Interface,
 {
-    inner: NonNull<T>,
+    inner: T,
     _scope: ComScope,
 }
 
 impl<T> ComObject<T>
 where
-    T: Deref<Target = IUnknown>,
+    T: Interface,
 {
-    pub unsafe fn take(inner: *mut T) -> Self {
+    pub unsafe fn take(inner: T) -> Self {
         Self {
-            inner: NonNull::new(inner).unwrap(),
+            inner,
             _scope: ComScope::begin().unwrap(),
         }
     }
@@ -73,26 +70,23 @@ where
 
 impl<T> Deref for ComObject<T>
 where
-    T: Deref<Target = IUnknown>,
+    T: Interface,
 {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { self.inner.as_ref() }
+        &self.inner
     }
 }
 
 impl<T> Clone for ComObject<T>
 where
-    T: Deref<Target = IUnknown>,
+    T: Clone + Interface,
 {
     fn clone(&self) -> Self {
         let scope = ComScope::begin().unwrap();
-        unsafe {
-            self.inner.as_ref().AddRef();
-        }
         Self {
-            inner: self.inner,
+            inner: self.inner.clone(),
             _scope: scope,
         }
     }
@@ -100,20 +94,11 @@ where
 
 impl<T> fmt::Debug for ComObject<T>
 where
-    T: Deref<Target = IUnknown>,
+    T: fmt::Debug + Interface,
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ComObject {{ {} }}", self.inner.as_ptr() as usize)
-    }
-}
-
-impl<T> Drop for ComObject<T>
-where
-    T: Deref<Target = IUnknown>,
-{
-    fn drop(&mut self) {
-        unsafe {
-            self.inner.as_ref().Release();
-        }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ComObject")
+            .field("inner", &self.inner)
+            .finish()
     }
 }

@@ -9,6 +9,7 @@ keywords = ["windows", "sound"]
 categories = ["command-line-utilities", "multimedia::audio"]
 license = "MIT/Apache-2.0"
 edition = "2021"
+rust-version = "1.61"
 
 [dependencies]
 clap = { version = "3", features = ["cargo"] }
@@ -22,7 +23,22 @@ serde_yaml = "0.8"
 tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_info"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 toml = "0.5"
-winapi = { version = "0.3", features = ["combaseapi", "coml2api", "endpointvolume", "mmdeviceapi", "objbase", "oleauto", "synchapi", "unknwnbase", "winerror"] }
+
+[dependencies.windows]
+version = "0.36.1"
+features = [
+    "alloc",
+    "implement",
+    "interface",
+    "Win32_Foundation",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+    "Win32_UI_Shell_PropertiesSystem",
+]
 
 [package.metadata.docs.rs]
 default-target = "i686-pc-windows-msvc"
