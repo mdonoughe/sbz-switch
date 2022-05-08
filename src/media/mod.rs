@@ -149,11 +149,12 @@ impl Endpoint {
     ///
     /// This allows discovery of a SoundCore implementation for devices that support it.
     pub fn clsid(&self) -> Result<GUID, SoundCoreError> {
-        let store = self
-            .property_store()?;
+        let store = self.property_store()?;
         let value = match store.get_string_value(&PKEY_SOUNDCORECTL_CLSID_AE5)? {
             Some(value) => value,
-            None => store.get_string_value(&PKEY_SOUNDCORECTL_CLSID_Z)?.ok_or(SoundCoreError::NotSupported)?,
+            None => store
+                .get_string_value(&PKEY_SOUNDCORECTL_CLSID_Z)?
+                .ok_or(SoundCoreError::NotSupported)?,
         };
         parse_guid(&value).or(Err(SoundCoreError::NotSupported))
     }
