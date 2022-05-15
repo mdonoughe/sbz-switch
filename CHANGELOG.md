@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [4.1.0] - 2022-05-15
 ### Added
 - Support for AE-5.
 
@@ -57,7 +59,8 @@ This release unfortunately renames the `-f` command line parameter to `-i` to al
 ### Added
 - Command to switch speaker configuration and adjust volume.
 
-[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/mdonoughe/sbz-switch/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/mdonoughe/sbz-switch/compare/v3.1.1...v4.0.0
 [3.1.1]: https://github.com/mdonoughe/sbz-switch/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/mdonoughe/sbz-switch/compare/v3.0.0...v3.1.0

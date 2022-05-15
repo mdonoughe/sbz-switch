@@ -1,6 +1,6 @@
 [package]
 name = "sbz-switch"
-version = "4.0.0"
+version = "4.1.0"
 authors = ["Matthew Donoughe <mdonoughe@gmail.com>"]
 description = "Utility for changing Sound Blaster parameters on Windows"
 repository = "https://github.com/mdonoughe/sbz-switch/"
@@ -9,9 +9,6 @@ keywords = ["windows", "sound"]
 categories = ["command-line-utilities", "multimedia::audio"]
 license = "MIT/Apache-2.0"
 edition = "2018"
-
-[badges]
-appveyor = { repository = "mdonoughe/sbz-switch" }
 
 [dependencies]
 clap = "2"

@@ -444,7 +444,7 @@ checksum = "73b4b750c782965c211b42f022f59af1fbceabdd026623714f104152f1ec149f"
 
 [[package]]
 name = "sbz-switch"
-version = "4.0.0"
+version = "4.1.0"
 dependencies = [
  "clap",
  "futures",
