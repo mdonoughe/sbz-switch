@@ -4,6 +4,11 @@
 
 [![Crates.io](https://img.shields.io/crates/v/sbz-switch.svg)](https://crates.io/crates/sbz-switch) ![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg) [![Build Status](https://github.com/mdonoughe/sbz-switch/actions/workflows/build.yml/badge.svg)](https://github.com/mdonoughe/sbz-switch/actions/workflows/build.yml) [![Docs.rs](https://docs.rs/sbz-switch/badge.svg)](https://docs.rs/sbz-switch)
 
+
+This Version has a mode Added that can automatically switches from speaker usage to Headphon Usage and back. It Is also able to Change System Volume to Predefined Levels while doing so.
+This creates a file named `quickswitch.conf` in the working directory which allows you to set the device IDs to toggle between as well as setting their volume levels and if you want to mute output while switching
+
+
 The Sound Blaster drivers, at least for the Sound Blaster Z, expose the speaker and headphone outputs as a single audio device to Windows, meaning the normal Windows methods of switching the sound output device will not work. Creative provides a graphical utility for this, but does it does not support hotkeys or anything like that, and it does not maintain a separate volume level for headphones vs speakers.
 
 This is a simple utility that does the following:
@@ -37,6 +42,8 @@ SUBCOMMANDS:
     list-devices    Prints out the names and IDs of available devices
     set             Sets specific parameters
     watch           Watches for events
+    switch          Switches from Headphone to Speakers and vice-versa
+
 ```
 
 ### List Devices

@@ -12,12 +12,15 @@ extern crate sbz_switch;
 extern crate sloggers;
 extern crate toml;
 
+extern crate confy;
+
 use clap::{AppSettings, Arg, ArgMatches, SubCommand};
 
 use indexmap::IndexMap;
 
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
 use std::io;
@@ -36,6 +39,9 @@ use toml::value::Value;
 
 use sbz_switch::soundcore::SoundCoreParamValue;
 use sbz_switch::{Configuration, DeviceInfo, EndpointConfiguration};
+
+mod quickswitch;
+use crate::quickswitch::QuickSwitchConfig;
 
 fn main() {
     std::process::exit(run());
@@ -142,6 +148,11 @@ fn run() -> i32 {
                 .arg(device_arg.clone())
                 .arg(output_format_arg.clone()),
         )
+        .subcommand(
+            SubCommand::with_name("switch")
+                .about("Switches from Headphone to Speakers or vice versa")
+                .arg(device_arg.clone()),
+        )
         .get_matches();
 
     if matches.subcommand_name().is_none() {
@@ -160,6 +171,7 @@ fn run() -> i32 {
         ("apply", Some(sub_m)) => apply(&logger, sub_m),
         ("set", Some(sub_m)) => set(&logger, sub_m),
         ("watch", Some(sub_m)) => watch(&logger, sub_m),
+        ("switch", Some(sub_m)) => switch(&logger, sub_m),
         _ => unreachable!(),
     };
 
@@ -173,6 +185,91 @@ fn run() -> i32 {
             1
         }
     }
+}
+
+// Switches to Device 0 (Headphones) and sets System volume to 8 // Values can be overriden via quickswitch.conf
+fn sth(logger: &Logger, dev: Option<&OsStr>) -> Result<(), Box<dyn Error>> {
+    let conf: QuickSwitchConfig = confy::load_path("./quickswitch.conf")?;
+    let mut creative_table = IndexMap::<String, IndexMap<String, SoundCoreParamValue>>::new();
+    creative_table
+        .entry("Device Control".to_string())
+        .or_insert_with(IndexMap::<String, SoundCoreParamValue>::new)
+        .insert(
+            "SelectOutput".to_string(),
+            sbz_switch::soundcore::SoundCoreParamValue::U32(conf.headphone_dev_id),
+        );
+
+    let config = Configuration {
+        endpoint: Some(EndpointConfiguration {
+            volume: Some(conf.headphone_vol / 100.0),
+        }),
+        creative: Some(creative_table),
+    };
+    sbz_switch::set(logger, dev, &config, conf.mute)
+}
+// Switches to device 1 (Speakers) and sets System Volume to 100 // Values can be overriden via quickswitch.conf
+fn sts(logger: &Logger, dev: Option<&OsStr>) -> Result<(), Box<dyn Error>> {
+    let conf: QuickSwitchConfig = confy::load_path("./quickswitch.conf")?;
+    let mut creative_table = IndexMap::<String, IndexMap<String, SoundCoreParamValue>>::new();
+    creative_table
+        .entry("Device Control".to_string())
+        .or_insert_with(IndexMap::<String, SoundCoreParamValue>::new)
+        .insert(
+            "SelectOutput".to_string(),
+            sbz_switch::soundcore::SoundCoreParamValue::U32(conf.speaker_dev_id),
+        );
+
+    let config = Configuration {
+        endpoint: Some(EndpointConfiguration {
+            volume: Some(conf.speaker_vol / 100.0),
+        }),
+        creative: Some(creative_table),
+    };
+    sbz_switch::set(logger, dev, &config, conf.mute)
+}
+
+// This Function Switches The Output from Headphones to Speakers or Vice Versa while Simultaneously setting The appropriate Volume Levels
+fn switch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    // reuse the already existing functions to retrieve device status
+    let table = sbz_switch::dump(logger, matches.value_of_os("device"))?;
+    let devctrl = table.creative;
+    let mut device: Option<u32> = None;
+    match devctrl {
+        Some(itable) => {
+            // Get Device Status
+            let activedevice = &itable["Device Control"];
+            for a in activedevice {
+                match (a.0.as_str(), a.1) {
+                    ("SelectOutput", SoundCoreParamValue::U32(val)) => {
+                        device = Some(*val);
+                    }
+                    _ => (),
+                };
+            }
+        }
+        _ => panic!("Device Error"),
+    }
+    println!("Dev: {}", device.unwrap());
+    match device {
+        Some(num) => {
+            match num {
+                // Headphones are Active Switch to speakers
+                0 => {
+                    println!("Headphones Detected!");
+                    return sts(logger, matches.value_of_os("device"));
+                }
+                // Speakers are Active Switch to Headphones
+                1 => {
+                    println!("Speakers Detected!");
+                    return sth(logger, matches.value_of_os("device"));
+                }
+                // Something else Happened and will be ignored
+                _ => (),
+            }
+        }
+        None => panic!("Output Missing Error"),
+    }
+    Ok(())
 }
 
 #[derive(Debug)]

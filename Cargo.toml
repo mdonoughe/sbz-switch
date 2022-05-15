@@ -12,6 +12,7 @@ edition = "2018"
 
 [dependencies]
 clap = "2"
+confy = "0.4.0"
 futures = "0.3"
 indexmap = "1"
 regex = "1"
