@@ -156,24 +156,30 @@ pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> 
             if parameter.attributes & 1 == 0 {
                 match parameter.kind {
                     1 => {
-                        let value = parameter.get()?;
+                        let value = parameter.get();
                         debug!("value: {value:?}");
                         match value {
-                            SoundCoreParamValue::None => {}
-                            _ => {
+                            Err(err) => {
+                                error!(error = %err, "Unable to get value");
+                            }
+                            Ok(SoundCoreParamValue::None) => {}
+                            Ok(value) => {
                                 feature_output.insert(parameter.description.clone(), value);
                             }
                         }
                     }
                     0 | 2 | 3 => {
-                        let value = parameter.get()?;
+                        let value = parameter.get();
                         debug!("minimum:    {min_value:?}", min_value = parameter.min_value);
                         debug!("maximum:    {max_value:?}", max_value = parameter.max_value);
                         debug!("step:       {step_size:?}", step_size = parameter.step_size);
                         debug!("value:      {value:?}");
                         match value {
-                            SoundCoreParamValue::None => {}
-                            _ => {
+                            Err(err) => {
+                                error!(error = %err, "Unable to get value");
+                            }
+                            Ok(SoundCoreParamValue::None) => {}
+                            Ok(value) => {
                                 feature_output.insert(parameter.description.clone(), value);
                             }
                         }
