@@ -19,10 +19,10 @@ use futures::{Stream, StreamExt};
 
 use indexmap::IndexMap;
 use tracing::{debug, debug_span, error, trace_span, warn};
+use windows::core::PCWSTR;
 
 use std::collections::BTreeSet;
 use std::error::Error;
-use std::ffi::OsStr;
 use std::fmt;
 use std::pin::Pin;
 use std::task::Poll;
@@ -91,7 +91,10 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, Box<dyn Error>> {
     Ok(result)
 }
 
-fn get_endpoint(device_id: Option<&OsStr>) -> windows::core::Result<Endpoint> {
+fn get_endpoint<I>(device_id: Option<I>) -> windows::core::Result<Endpoint>
+where
+    I: Into<PCWSTR>,
+{
     let enumerator = DeviceEnumerator::new()?;
     Ok(match device_id {
         Some(id) => enumerator.get_endpoint(id)?,
@@ -108,7 +111,10 @@ fn get_endpoint(device_id: Option<&OsStr>) -> windows::core::Result<Endpoint> {
 /// ```
 /// println!("{:?}", dump(None)?);
 /// ```
-pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> {
+pub fn dump<I>(device_id: Option<I>) -> Result<Configuration, Box<dyn Error>>
+where
+    I: Into<PCWSTR>,
+{
     let endpoint = get_endpoint(device_id)?;
 
     let endpoint_output = EndpointConfiguration {
@@ -223,11 +229,14 @@ pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> 
 /// };
 /// set(None, &configuration, true);
 /// ```
-pub fn set(
-    device_id: Option<&OsStr>,
+pub fn set<I>(
+    device_id: Option<I>,
     configuration: &Configuration,
     mute: bool,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>>
+where
+    I: Into<PCWSTR>,
+{
     let endpoint = get_endpoint(device_id)?;
     let mute_unmute = mute && !endpoint.get_mute()?;
     if mute_unmute {
@@ -252,7 +261,10 @@ pub fn set(
 ///     println!("{:?}", event);
 /// }
 /// ```
-pub fn watch(device_id: Option<&OsStr>) -> Result<SoundCoreEventIterator, Box<dyn Error>> {
+pub fn watch<I>(device_id: Option<I>) -> Result<SoundCoreEventIterator, Box<dyn Error>>
+where
+    I: Into<PCWSTR>,
+{
     let endpoint = get_endpoint(device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
@@ -319,9 +331,12 @@ impl Iterator for SoundCoreAndVolumeEventIterator {
 ///     println!("{:?}", event);
 /// }
 /// ```
-pub fn watch_with_volume(
-    device_id: Option<&OsStr>,
-) -> Result<SoundCoreAndVolumeEventIterator, Box<dyn Error>> {
+pub fn watch_with_volume<I>(
+    device_id: Option<I>,
+) -> Result<SoundCoreAndVolumeEventIterator, Box<dyn Error>>
+where
+    I: Into<PCWSTR>,
+{
     let endpoint = get_endpoint(device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;

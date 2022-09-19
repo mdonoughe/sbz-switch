@@ -7,6 +7,7 @@ use clap::{Arg, ArgMatches};
 use indexmap::IndexMap;
 use tracing::{debug, error};
 use tracing_subscriber::filter::EnvFilter;
+use windows::core::HSTRING;
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -580,7 +581,7 @@ fn list_devices(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
 }
 
 fn dump(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let table = sbz_switch::dump(matches.value_of_os("device"))?;
+    let table = sbz_switch::dump(matches.value_of_os("device").map(HSTRING::from).as_ref())?;
     let text = format_configuration(&table, matches)?;
     let output = matches.value_of("output");
     match output {
@@ -601,7 +602,11 @@ fn apply(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     mem::drop(text);
 
     let mute = matches.value_of_t("mute")?;
-    sbz_switch::set(matches.value_of_os("device"), &configuration, mute)
+    sbz_switch::set(
+        matches.value_of_os("device").map(HSTRING::from).as_ref(),
+        &configuration,
+        mute,
+    )
 }
 
 struct Collator<I, F> {
@@ -686,11 +691,17 @@ fn set(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     };
 
     let mute = matches.value_of_t("mute")?;
-    sbz_switch::set(matches.value_of_os("device"), &configuration, mute)
+    sbz_switch::set(
+        matches.value_of_os("device").map(HSTRING::from).as_ref(),
+        &configuration,
+        mute,
+    )
 }
 
 fn watch(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    for event in sbz_switch::watch_with_volume(matches.value_of_os("device"))? {
+    for event in
+        sbz_switch::watch_with_volume(matches.value_of_os("device").map(HSTRING::from).as_ref())?
+    {
         println!("{:?}", event);
     }
     Ok(())

@@ -5,12 +5,10 @@
 mod event;
 
 use std::error::Error;
-use std::ffi::{OsStr, OsString};
-use std::fmt;
+use std::ffi::OsString;
+use std::fmt::{self, Debug};
 use std::isize;
-use std::mem::MaybeUninit;
 use std::os::windows::ffi::OsStringExt;
-use std::ptr;
 use std::slice;
 use std::sync::Mutex;
 
@@ -18,7 +16,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::{executor, SinkExt};
 use regex::Regex;
 use tracing::{info, instrument};
-use windows::core::{implement, Interface, GUID};
+use windows::core::{implement, GUID, PCWSTR};
 use windows::Win32::Foundation::E_ABORT;
 use windows::Win32::Media::Audio::Endpoints::{
     IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl,
@@ -27,8 +25,10 @@ use windows::Win32::Media::Audio::{
     eConsole, eRender, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator,
     AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE_ACTIVE,
 };
-use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PROPVARIANT, STGM_READ};
-use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL};
+use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PROPVARIANT};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ, VT_EMPTY, VT_LPWSTR,
+};
 use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
 
 pub(crate) use self::event::VolumeEvents;
@@ -157,14 +157,8 @@ impl Endpoint {
     fn volume(&self) -> windows::core::Result<ComObject<IAudioEndpointVolume>> {
         self.volume
             .get_or_create(|| unsafe {
-                let mut ctrl = MaybeUninit::<IAudioEndpointVolume>::uninit();
-                self.device.Activate(
-                    &IAudioEndpointVolume::IID,
-                    CLSCTX_ALL,
-                    ptr::null_mut(),
-                    ctrl.as_mut_ptr() as *mut _,
-                )?;
-                Ok(ComObject::take(ctrl.assume_init()))
+                let ctrl = self.device.Activate(CLSCTX_ALL, None)?;
+                Ok(ComObject::take(ctrl))
             })
             .clone()
     }
@@ -177,7 +171,7 @@ impl Endpoint {
     #[instrument]
     pub fn set_mute(&self, mute: bool) -> windows::core::Result<()> {
         unsafe {
-            self.volume()?.SetMute(mute, ptr::null_mut())?;
+            self.volume()?.SetMute(mute, &GUID::zeroed())?;
             Ok(())
         }
     }
@@ -191,7 +185,7 @@ impl Endpoint {
         unsafe {
             info!("Setting volume to {volume}...");
             self.volume()?
-                .SetMasterVolumeLevelScalar(volume, ptr::null_mut())?;
+                .SetMasterVolumeLevelScalar(volume, &GUID::zeroed())?;
             Ok(())
         }
     }
@@ -233,7 +227,7 @@ impl GetPropertyError {
 impl fmt::Display for GetPropertyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            GetPropertyError::Win32(error) => error.fmt(f),
+            GetPropertyError::Win32(error) => write!(f, "{}", error),
             GetPropertyError::UnexpectedType(code) => {
                 write!(f, "returned property value was of unexpected type {}", code)
             }
@@ -269,16 +263,14 @@ impl PropertyStore {
     fn get_string_value(&self, key: &PROPERTYKEY) -> Result<Option<String>, GetPropertyError> {
         unsafe {
             let mut property_value = self.get_value(key)?;
-            tracing::Span::current().record("type", &property_value.Anonymous.Anonymous.vt);
-            // VT_EMPTY
-            if property_value.Anonymous.Anonymous.vt == 0 {
+            tracing::Span::current().record("type", &property_value.Anonymous.Anonymous.vt.0);
+            if property_value.Anonymous.Anonymous.vt == VT_EMPTY {
                 return Ok(None);
             }
-            // VT_LPWSTR
-            if property_value.Anonymous.Anonymous.vt != 31 {
+            if property_value.Anonymous.Anonymous.vt != VT_LPWSTR {
                 PropVariantClear(&mut property_value).unwrap();
                 return Err(GetPropertyError::UnexpectedType(
-                    property_value.Anonymous.Anonymous.vt,
+                    property_value.Anonymous.Anonymous.vt.0,
                 ));
             }
             let chars = property_value.Anonymous.Anonymous.Anonymous.pwszVal.0;
@@ -338,9 +330,14 @@ impl DeviceEnumerator {
         }
     }
     /// Get a specific audio endpoint by its ID.
-    #[instrument(level = "trace")]
-    pub fn get_endpoint(&self, id: &OsStr) -> windows::core::Result<Endpoint> {
+    #[instrument(level = "trace", skip(id), fields(id))]
+    pub fn get_endpoint<I>(&self, id: I) -> windows::core::Result<Endpoint>
+    where
+        I: Into<PCWSTR>,
+    {
         unsafe {
+            let id: PCWSTR = id.into();
+            tracing::Span::current().record("id", &tracing::field::display(id.display()));
             let device = self.0.GetDevice(id)?;
             Ok(Endpoint::new(ComObject::take(device)))
         }

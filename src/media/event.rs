@@ -62,7 +62,7 @@ impl VolumeEvents {
             let callback: IAudioEndpointVolumeCallback =
                 AudioEndpointVolumeCallback::new(tx).into();
 
-            (*volume).RegisterControlChangeNotify(callback.clone())?;
+            (*volume).RegisterControlChangeNotify(&callback)?;
 
             Ok(Self {
                 volume,
