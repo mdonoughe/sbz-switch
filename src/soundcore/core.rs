@@ -1,17 +1,12 @@
 use std::ffi::OsStr;
-use std::mem::MaybeUninit;
 use std::os::windows::ffi::OsStrExt;
-use std::ptr;
 
-use slog::Logger;
-
-use winapi::shared::guiddef::GUID;
-use winapi::um::combaseapi::{CoCreateInstance, CLSCTX_ALL};
-use winapi::Interface;
+use tracing::instrument;
+use windows::core::{Interface, GUID};
+use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
 use crate::com::{ComObject, ComScope};
 use crate::ctsndcr::{HardwareInfo, IEventNotify, ISoundCore};
-use crate::hresult::{check, Win32Error};
 
 use super::event::{SoundCoreEventIterator, SoundCoreEvents};
 use super::{SoundCoreError, SoundCoreFeatureIterator};
@@ -19,9 +14,9 @@ use super::{SoundCoreError, SoundCoreFeatureIterator};
 /// Provides control of Creative SoundBlaster features.
 ///
 /// This is a wrapper around `ISoundCore`.
+#[derive(Debug)]
 pub struct SoundCore {
     sound_core: ComObject<ISoundCore>,
-    logger: Logger,
 }
 
 impl SoundCore {
@@ -32,35 +27,23 @@ impl SoundCore {
     ///
     /// `device_id` is the Windows device ID, and can be obtained from
     /// [`Endpoint.id()`](../media/Endpoint.t.html#method.id).
-    pub fn for_device(
-        clsid: &GUID,
-        device_id: &str,
-        logger: Logger,
-    ) -> Result<SoundCore, SoundCoreError> {
+    pub fn for_device(clsid: &GUID, device_id: &str) -> Result<SoundCore, SoundCoreError> {
         let _scope = ComScope::begin();
-        let mut core = SoundCore::new(clsid, logger)?;
+        let mut core = SoundCore::new(clsid)?;
         core.bind_hardware(device_id)?;
         Ok(core)
     }
     #[allow(clippy::new_ret_no_self)]
-    fn new(clsid: &GUID, logger: Logger) -> Result<SoundCore, SoundCoreError> {
+    fn new(clsid: &GUID) -> Result<SoundCore, SoundCoreError> {
         unsafe {
-            let mut sc = MaybeUninit::<*mut ISoundCore>::uninit();
-            check(CoCreateInstance(
-                clsid,
-                ptr::null_mut(),
-                CLSCTX_ALL,
-                &ISoundCore::uuidof(),
-                sc.as_mut_ptr() as *mut _,
-            ))?;
+            let sc: ISoundCore = CoCreateInstance(clsid, None, CLSCTX_ALL)?;
             Ok(SoundCore {
-                sound_core: ComObject::take(sc.assume_init()),
-                logger,
+                sound_core: ComObject::take(sc),
             })
         }
     }
-    fn bind_hardware(&mut self, id: &str) -> Result<(), Win32Error> {
-        trace!(self.logger, "Binding SoundCore to {}...", id);
+    #[instrument(level = "trace")]
+    fn bind_hardware(&mut self, id: &str) -> windows::core::Result<()> {
         let mut buffer = [0; 260];
         for c in OsStr::new(id).encode_wide().enumerate() {
             buffer[c.0] = c.1;
@@ -69,12 +52,11 @@ impl SoundCore {
             info_type: 0,
             info: buffer,
         };
-        check(unsafe { self.sound_core.BindHardware(&info) })?;
-        Ok(())
+        unsafe { self.sound_core.BindHardware(&info).ok() }
     }
     /// Returns an iterator over the features exposed by a device.
     pub fn features(&self, context: u32) -> SoundCoreFeatureIterator {
-        SoundCoreFeatureIterator::new(self.sound_core.clone(), self.logger.clone(), context)
+        SoundCoreFeatureIterator::new(self.sound_core.clone(), context)
     }
     /// Returns an iterator over events produced by the SoundCore API.
     ///
@@ -89,22 +71,14 @@ impl SoundCore {
     /// because the SoundCore API for events does not seem to support registering
     /// multiple event handlers and then unregistering only one of them. Probably
     /// this is okay if done with multiple `SoundCore` instances.
-    pub fn events(&self) -> Result<SoundCoreEventIterator, Win32Error> {
+    pub fn events(&self) -> windows::core::Result<SoundCoreEventIterator> {
         Ok(SoundCoreEventIterator::new(self.event_stream()?))
     }
 
-    pub(crate) fn event_stream(&self) -> Result<SoundCoreEvents, Win32Error> {
+    pub(crate) fn event_stream(&self) -> windows::core::Result<SoundCoreEvents> {
         unsafe {
-            let mut event_notify = MaybeUninit::<*mut IEventNotify>::uninit();
-            check(
-                self.sound_core
-                    .QueryInterface(&IEventNotify::uuidof(), event_notify.as_mut_ptr() as *mut _),
-            )?;
-            SoundCoreEvents::new(
-                ComObject::take(event_notify.assume_init()),
-                self.sound_core.clone(),
-                self.logger.clone(),
-            )
+            let event_notify: IEventNotify = self.sound_core.cast()?;
+            SoundCoreEvents::new(ComObject::take(event_notify), self.sound_core.clone())
         }
     }
 }

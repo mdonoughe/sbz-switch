@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- `slog` has been replaced with `tracing`.
+- `winapi` has been replaced with `windows`.
 
 ## [4.1.0] - 2022-05-15
 ### Added

@@ -1,19 +1,16 @@
-use std::mem;
+use std::mem::MaybeUninit;
 
-use slog::Logger;
-
-use winapi::shared::winerror::E_FAIL;
+use tracing::trace_span;
+use windows::Win32::Foundation::E_FAIL;
 
 use crate::com::ComObject;
-use crate::ctsndcr::{ISoundCore, ParamInfo};
-use crate::hresult::{check, Win32Error};
+use crate::ctsndcr::ISoundCore;
 
 use crate::SoundCoreParameter;
 
 /// Iterates over the parameters of a feature.
 pub struct SoundCoreParameterIterator {
     target: ComObject<ISoundCore>,
-    logger: Logger,
     context: u32,
     feature_id: u32,
     feature_description: String,
@@ -23,14 +20,12 @@ pub struct SoundCoreParameterIterator {
 impl SoundCoreParameterIterator {
     pub(crate) fn new(
         target: ComObject<ISoundCore>,
-        logger: Logger,
         context: u32,
         feature_id: u32,
         feature_description: String,
     ) -> Self {
         Self {
             target,
-            logger,
             context,
             feature_id,
             feature_description,
@@ -40,44 +35,35 @@ impl SoundCoreParameterIterator {
 }
 
 impl Iterator for SoundCoreParameterIterator {
-    type Item = Result<SoundCoreParameter, Win32Error>;
+    type Item = windows::core::Result<SoundCoreParameter>;
 
-    fn next(&mut self) -> Option<Result<SoundCoreParameter, Win32Error>> {
+    fn next(&mut self) -> Option<windows::core::Result<SoundCoreParameter>> {
         unsafe {
-            let mut info: ParamInfo = mem::zeroed();
-            trace!(
-                self.logger,
-                "Fetching parameter .{}.{}[{}]...",
-                self.context,
-                self.feature_description,
-                self.index
+            let span = trace_span!(
+                "Fetching parameter .{context}.{feature}[{index}]...",
+                context = self.context,
+                feature = %self.feature_description,
+                index = self.index,
             );
-            match check(self.target.EnumParams(
-                self.context,
-                self.index,
-                self.feature_id,
-                &mut info,
-            )) {
-                Ok(_) => {}
+            let _span = span.enter();
+            let mut info = MaybeUninit::uninit();
+            let info = match self
+                .target
+                .EnumParams(self.context, self.index, self.feature_id, info.as_mut_ptr())
+                .ok()
+            {
+                Ok(()) => info.assume_init(),
                 // FAIL used to mark end of collection
-                Err(Win32Error { code, .. }) if code == E_FAIL => return None,
+                Err(error) if error.code() == E_FAIL => return None,
                 Err(error) => return Some(Err(error)),
             };
-            trace!(
-                self.logger,
-                "Got parameter .{}.{}[{}] = {:?}",
-                self.context,
-                self.feature_description,
-                self.index,
-                info
-            );
+            span.record("info", &tracing::field::debug(&info));
             self.index += 1;
             match info.param.feature {
                 0 => None,
                 _ => Some(Ok(SoundCoreParameter::new(
                     self.target.clone(),
                     self.feature_description.clone(),
-                    self.logger.clone(),
                     &info,
                 ))),
             }

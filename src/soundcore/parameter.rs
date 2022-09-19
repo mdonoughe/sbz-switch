@@ -1,13 +1,12 @@
-use std::mem::{self, MaybeUninit};
+use std::mem;
+use std::mem::MaybeUninit;
 use std::str;
 
-use slog::Logger;
-
-use winapi::shared::winerror::E_ACCESSDENIED;
+use tracing::{info, trace, trace_span};
+use windows::Win32::Foundation::E_ACCESSDENIED;
 
 use crate::com::ComObject;
 use crate::ctsndcr::{ISoundCore, Param, ParamInfo, ParamValue};
-use crate::hresult::{check, Win32Error};
 
 /// Captures the value of a parameter.
 #[derive(Clone, Copy, Debug)]
@@ -28,7 +27,6 @@ pub enum SoundCoreParamValue {
 #[derive(Debug)]
 pub struct SoundCoreParameter {
     core: ComObject<ISoundCore>,
-    logger: Logger,
     context: u32,
     feature_id: u32,
     feature_description: String,
@@ -54,7 +52,6 @@ impl SoundCoreParameter {
     pub(crate) fn new(
         core: ComObject<ISoundCore>,
         feature_description: String,
-        logger: Logger,
         info: &ParamInfo,
     ) -> Self {
         let description_length = info
@@ -67,7 +64,6 @@ impl SoundCoreParameter {
             context: info.param.context,
             feature_id: info.param.feature,
             feature_description,
-            logger,
             id: info.param.param,
             description: str::from_utf8(&info.description[0..description_length])
                 .unwrap()
@@ -87,7 +83,7 @@ impl SoundCoreParameter {
     ///
     /// May return `Err(Win32Error { code: E_ACCESSDENIED })` when getting a
     /// parameter that is not currently applicable.
-    pub fn get(&self) -> Result<SoundCoreParamValue, Win32Error> {
+    pub fn get(&self) -> windows::core::Result<SoundCoreParamValue> {
         // varsize -> not supported
         if self.kind == 5 {
             return Ok(SoundCoreParamValue::None);
@@ -98,19 +94,13 @@ impl SoundCoreParameter {
                 feature: self.feature_id,
                 param: self.id,
             };
+            let span = trace_span!("Fetching parameter value .{context}.{feature_id}.{id}...",);
+            let _span = span.enter();
             let mut value = MaybeUninit::uninit();
-            trace!(
-                self.logger,
-                "Fetching parameter value .{}.{}.{}...",
-                self.context,
-                self.feature_id,
-                self.id
-            );
-            match check(self.core.GetParamValue(param, value.as_mut_ptr())) {
-                Ok(_) => {}
-                Err(Win32Error { code, .. }) if code == E_ACCESSDENIED => {
+            let value = match self.core.GetParamValue(param, value.as_mut_ptr()).ok() {
+                Ok(()) => value.assume_init(),
+                Err(error) if error.code() == E_ACCESSDENIED => {
                     trace!(
-                        self.logger,
                         "Got parameter value .{}.{}.{} = {}",
                         self.context,
                         self.feature_id,
@@ -121,15 +111,7 @@ impl SoundCoreParameter {
                 }
                 Err(error) => return Err(error),
             };
-            let value = value.assume_init();
-            trace!(
-                self.logger,
-                "Got parameter value .{}.{}.{} = {:?}",
-                self.context,
-                self.feature_id,
-                self.id,
-                value
-            );
+            span.record("value", &tracing::field::debug(&value));
             Ok(convert_param_value(&value))
         }
     }
@@ -137,7 +119,7 @@ impl SoundCoreParameter {
     ///
     /// May return `Err(Win32Error { code: E_ACCESSDENIED })` when setting a
     /// parameter that is not currently applicable.
-    pub fn set(&mut self, value: &SoundCoreParamValue) -> Result<(), Win32Error> {
+    pub fn set(&mut self, value: &SoundCoreParamValue) -> windows::core::Result<()> {
         unsafe {
             let param = Param {
                 context: self.context,
@@ -167,11 +149,10 @@ impl SoundCoreParameter {
                 },
             };
             info!(
-                self.logger,
-                "Setting {}.{} = {:?}", self.feature_description, self.description, value
+                "Setting {}.{} = {:?}",
+                self.feature_description, self.description, value
             );
-            check(self.core.SetParamValue(param, param_value))?;
-            Ok(())
+            self.core.SetParamValue(param, param_value).ok()
         }
     }
 }

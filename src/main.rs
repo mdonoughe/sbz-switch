@@ -1,20 +1,12 @@
 #[macro_use]
-extern crate clap;
-extern crate indexmap;
-extern crate serde;
-#[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
-extern crate serde_yaml;
-#[macro_use]
-extern crate slog;
-extern crate sbz_switch;
-extern crate sloggers;
-extern crate toml;
 
-use clap::{AppSettings, Arg, ArgMatches, SubCommand};
+use clap::Command;
+use clap::{Arg, ArgMatches};
 
 use indexmap::IndexMap;
+use tracing::{debug, error};
+use tracing_subscriber::filter::EnvFilter;
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -27,11 +19,6 @@ use std::iter::IntoIterator;
 use std::mem;
 use std::str::FromStr;
 
-use slog::Logger;
-use sloggers::terminal::{Destination, TerminalLoggerBuilder};
-use sloggers::types::Severity;
-use sloggers::Build;
-
 use toml::value::Value;
 
 use sbz_switch::soundcore::SoundCoreParamValue;
@@ -42,134 +29,129 @@ fn main() {
 }
 
 fn run() -> i32 {
-    let device_arg = Arg::with_name("device")
-        .short("d")
+    let device_arg = Arg::new("device")
+        .short('d')
         .long("device")
         .value_name("DEVICE_ID")
         .help("Specify the device to act on (get id from list-devices)");
-    let format_arg = Arg::with_name("format")
-        .short("f")
+    let format_arg = Arg::new("format")
+        .short('f')
         .value_name("FORMAT")
         .possible_values(&["toml", "json", "yaml"])
         .default_value("toml");
     let input_format_arg = format_arg.clone().help("Select the input format");
     let output_format_arg = format_arg.clone().help("Select the output format");
-    let matches = app_from_crate!()
-        .setting(AppSettings::AllowNegativeNumbers)
+    let matches = clap::command!()
+        .allow_negative_numbers(true)
+        .subcommand_required(true)
         .subcommand(
-            SubCommand::with_name("list-devices")
+            Command::new("list-devices")
                 .about("Prints out the names and IDs of available devices")
                 .arg(output_format_arg.clone()),
         )
         .subcommand(
-            SubCommand::with_name("dump")
+            Command::new("dump")
                 .about("Prints out the current configuration")
                 .arg(device_arg.clone())
                 .arg(output_format_arg.clone())
                 .arg(
-                    Arg::with_name("output")
-                        .short("o")
+                    Arg::new("output")
+                        .short('o')
                         .long("output")
                         .value_name("FILE")
                         .help("Saves the current settings to a file"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("apply")
+            Command::new("apply")
                 .about("Applies a saved configuration")
                 .arg(device_arg.clone())
                 .arg(input_format_arg)
                 .arg(
-                    Arg::with_name("file")
-                        .short("i")
+                    Arg::new("file")
+                        .short('i')
                         .value_name("FILE")
                         .help("Reads the settings from a file instead of stdin"),
                 )
                 .arg(
-                    Arg::with_name("mute")
-                        .short("m")
+                    Arg::new("mute")
+                        .short('m')
                         .value_name("true|false")
                         .default_value("true")
                         .help("Temporarily mutes while changing parameters"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("set")
+            Command::new("set")
                 .about("Sets specific parameters")
                 .arg(device_arg.clone())
                 .arg(
-                    Arg::with_name("bool")
-                        .short("b")
+                    Arg::new("bool")
+                        .short('b')
                         .help("Sets a boolean value")
-                        .multiple(true)
+                        .multiple_occurrences(true)
                         .number_of_values(3)
                         .value_names(&["FEATURE", "PARAMETER", "true|false"]),
                 )
                 .arg(
-                    Arg::with_name("int")
-                        .short("i")
+                    Arg::new("int")
+                        .short('i')
                         .help("Sets an integer value")
-                        .multiple(true)
+                        .multiple_occurrences(true)
                         .number_of_values(3)
                         .value_names(&["FEATURE", "PARAMETER", "VALUE"]),
                 )
                 .arg(
-                    Arg::with_name("float")
-                        .short("f")
+                    Arg::new("float")
+                        .short('f')
                         .help("Sets a floating-point value")
-                        .multiple(true)
+                        .multiple_occurrences(true)
                         .number_of_values(3)
                         .value_names(&["FEATURE", "PARAMETER", "VALUE"]),
                 )
                 .arg(
-                    Arg::with_name("volume")
-                        .short("v")
+                    Arg::new("volume")
+                        .short('v')
                         .long("volume")
                         .value_name("VOLUME")
                         .help("Sets the volume, in percent"),
                 )
                 .arg(
-                    Arg::with_name("mute")
-                        .short("m")
+                    Arg::new("mute")
+                        .short('m')
                         .value_name("true|false")
                         .default_value("true")
                         .help("Temporarily mutes while changing parameters"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("watch")
+            Command::new("watch")
                 .about("Watches for events")
                 .arg(device_arg.clone())
                 .arg(output_format_arg.clone()),
         )
         .get_matches();
 
-    if matches.subcommand_name().is_none() {
-        println!("{}", matches.usage());
-        return 1;
-    }
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
-    let mut builder = TerminalLoggerBuilder::new();
-    builder.level(Severity::Debug);
-    builder.destination(Destination::Stderr);
-    let logger = builder.build().unwrap();
-
-    let result = match matches.subcommand() {
-        ("list-devices", Some(sub_m)) => list_devices(&logger, sub_m),
-        ("dump", Some(sub_m)) => dump(&logger, sub_m),
-        ("apply", Some(sub_m)) => apply(&logger, sub_m),
-        ("set", Some(sub_m)) => set(&logger, sub_m),
-        ("watch", Some(sub_m)) => watch(&logger, sub_m),
+    let result = match matches.subcommand().unwrap() {
+        ("list-devices", sub_m) => list_devices(sub_m),
+        ("dump", sub_m) => dump(sub_m),
+        ("apply", sub_m) => apply(sub_m),
+        ("set", sub_m) => set(sub_m),
+        ("watch", sub_m) => watch(sub_m),
         _ => unreachable!(),
     };
 
     match result {
         Ok(()) => {
-            debug!(logger, "Completed successfully");
+            debug!("Completed successfully");
             0
         }
         Err(error) => {
-            crit!(logger, "Unexpected error: {}", error);
+            error!("Unexpected error: {error}");
             1
         }
     }
@@ -582,8 +564,8 @@ impl From<DeviceInfo> for SerializableDeviceInfo {
     }
 }
 
-fn list_devices(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let devices: Vec<_> = sbz_switch::list_devices(logger)?
+fn list_devices(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let devices: Vec<_> = sbz_switch::list_devices()?
         .into_iter()
         .map(SerializableDeviceInfo::from)
         .collect();
@@ -597,8 +579,8 @@ fn list_devices(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Err
     Ok(())
 }
 
-fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let table = sbz_switch::dump(logger, matches.value_of_os("device"))?;
+fn dump(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let table = sbz_switch::dump(matches.value_of_os("device"))?;
     let text = format_configuration(&table, matches)?;
     let output = matches.value_of("output");
     match output {
@@ -608,7 +590,7 @@ fn dump(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+fn apply(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let mut text = String::new();
     match matches.value_of("file") {
         Some(name) => BufReader::new(File::open(name)?).read_to_string(&mut text)?,
@@ -618,8 +600,8 @@ fn apply(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let configuration: Configuration = unformat_configuration(&text, matches)?;
     mem::drop(text);
 
-    let mute = value_t!(matches, "mute", bool)?;
-    sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
+    let mute = matches.value_of_t("mute")?;
+    sbz_switch::set(matches.value_of_os("device"), &configuration, mute)
 }
 
 struct Collator<I, F> {
@@ -664,7 +646,7 @@ fn collate_set_values<I, F>(iter: Option<I>, f: F) -> Collator<I, F> {
     Collator { iter, f }
 }
 
-fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+fn set(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let mut creative_table = IndexMap::<String, IndexMap<String, SoundCoreParamValue>>::new();
 
     for (feature, parameter, value) in collate_set_values(matches.values_of("bool"), |s| {
@@ -703,12 +685,12 @@ fn set(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
         creative: Some(creative_table),
     };
 
-    let mute = value_t!(matches, "mute", bool)?;
-    sbz_switch::set(logger, matches.value_of_os("device"), &configuration, mute)
+    let mute = matches.value_of_t("mute")?;
+    sbz_switch::set(matches.value_of_os("device"), &configuration, mute)
 }
 
-fn watch(logger: &Logger, matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    for event in sbz_switch::watch_with_volume(logger, matches.value_of_os("device"))? {
+fn watch(matches: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    for event in sbz_switch::watch_with_volume(matches.value_of_os("device"))? {
         println!("{:?}", event);
     }
     Ok(())

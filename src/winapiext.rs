@@ -2,11 +2,13 @@
 #![allow(unknown_lints)]
 #![allow(clippy::unreadable_literal)]
 
-use winapi::shared::wtypes::PROPERTYKEY;
+use windows::{core::GUID, Win32::UI::Shell::PropertiesSystem::PROPERTYKEY};
 
-DEFINE_PROPERTYKEY! {PKEY_DeviceInterface_FriendlyName,
-0x026e516e, 0xb814, 0x414b, 0x83, 0xcd, 0x85, 0x6d, 0x6f, 0xef, 0x48, 0x22,
-2}
-DEFINE_PROPERTYKEY! {PKEY_Device_DeviceDesc,
-0xa45c254e, 0xdf1c, 0x4efd, 0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0,
-2}
+pub const PKEY_DeviceInterface_FriendlyName: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0x026e516e_b814_414b_83cd_856d6fef4822),
+    pid: 2,
+};
+pub const PKEY_Device_DeviceDesc: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
+    pid: 2,
+};
