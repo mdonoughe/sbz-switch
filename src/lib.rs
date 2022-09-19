@@ -19,10 +19,10 @@ use futures::{Stream, StreamExt};
 
 use indexmap::IndexMap;
 use tracing::{debug, debug_span, error, trace_span, warn};
+use windows::core::PCWSTR;
 
 use std::collections::BTreeSet;
 use std::error::Error;
-use std::ffi::OsStr;
 use std::fmt;
 use std::pin::Pin;
 use std::task::Poll;
@@ -80,7 +80,7 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, Box<dyn Error>> {
     let mut result = Vec::with_capacity(endpoints.len());
     for endpoint in endpoints {
         let id = endpoint.id()?;
-        let span = debug_span!("Querying endpoint {id}...");
+        let span = debug_span!("Querying endpoint...", endpoint_id = id);
         let _span = span.enter();
         result.push(DeviceInfo {
             id,
@@ -91,7 +91,10 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, Box<dyn Error>> {
     Ok(result)
 }
 
-fn get_endpoint(device_id: Option<&OsStr>) -> windows::core::Result<Endpoint> {
+fn get_endpoint<I>(device_id: Option<I>) -> windows::core::Result<Endpoint>
+where
+    I: Into<PCWSTR>,
+{
     let enumerator = DeviceEnumerator::new()?;
     Ok(match device_id {
         Some(id) => enumerator.get_endpoint(id)?,
@@ -108,7 +111,10 @@ fn get_endpoint(device_id: Option<&OsStr>) -> windows::core::Result<Endpoint> {
 /// ```
 /// println!("{:?}", dump(None)?);
 /// ```
-pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> {
+pub fn dump<I>(device_id: Option<I>) -> Result<Configuration, Box<dyn Error>>
+where
+    I: Into<PCWSTR>,
+{
     let endpoint = get_endpoint(device_id)?;
 
     let endpoint_output = EndpointConfiguration {
@@ -116,71 +122,81 @@ pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> 
     };
 
     let id = endpoint.id()?;
-    debug!("Found device {id}");
+    debug!(endpoint_id = id, "Found device");
     let clsid = endpoint.clsid()?;
     debug!(
-        "Found clsid {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
-        clsid.data1,
-        clsid.data2,
-        clsid.data3,
-        clsid.data4[0],
-        clsid.data4[1],
-        clsid.data4[2],
-        clsid.data4[3],
-        clsid.data4[4],
-        clsid.data4[5],
-        clsid.data4[6],
-        clsid.data4[7]
+        clsid = format!(
+            "{{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
+            clsid.data1,
+            clsid.data2,
+            clsid.data3,
+            clsid.data4[0],
+            clsid.data4[1],
+            clsid.data4[2],
+            clsid.data4[3],
+            clsid.data4[4],
+            clsid.data4[5],
+            clsid.data4[6],
+            clsid.data4[7],
+        ),
+        "Found clsid",
     );
     let core = SoundCore::for_device(&clsid, &id)?;
 
     let mut context_output = IndexMap::new();
     for feature in core.features(0) {
         let feature = feature?;
-        let feature_span = debug_span!("feature {id} {description}", id = feature.id, description = %feature.description);
+        let feature_span =
+            debug_span!("feature", id = feature.id, description = %feature.description);
         let _feature_span = feature_span.enter();
 
         let mut feature_output = IndexMap::new();
         for parameter in feature.parameters() {
             let parameter = parameter?;
-            let parameter_span = debug_span!("parameter {id} {description}", id = parameter.id, description = %parameter.description);
-            let _parameter_span = parameter_span.enter();
-            debug!(
-                "attributes: {attributes}",
-                attributes = parameter.attributes
+            let parameter_span = debug_span!(
+                "parameter",
+                id = parameter.id,
+                description = %parameter.description,
+                attributes = parameter.attributes,
+                size = ?parameter.size,
+                kind = parameter.kind,
+                min_value = ?parameter.min_value,
+                max_value = ?parameter.max_value,
+                step_size = ?parameter.step_size,
             );
-            if let Some(size) = parameter.size {
-                debug!("size: {size}");
-            }
+            let _parameter_span = parameter_span.enter();
             // skip read-only parameters
             if parameter.attributes & 1 == 0 {
                 match parameter.kind {
                     1 => {
-                        let value = parameter.get()?;
-                        debug!("value: {value:?}");
+                        let value = parameter.get();
                         match value {
-                            SoundCoreParamValue::None => {}
-                            _ => {
+                            Err(err) => {
+                                error!(error = %err, "Unable to get value");
+                            }
+                            Ok(SoundCoreParamValue::None) => {}
+                            Ok(value) => {
+                                debug!(value = ?value, "Got value");
                                 feature_output.insert(parameter.description.clone(), value);
                             }
                         }
                     }
                     0 | 2 | 3 => {
-                        let value = parameter.get()?;
-                        debug!("minimum:    {min_value:?}", min_value = parameter.min_value);
-                        debug!("maximum:    {max_value:?}", max_value = parameter.max_value);
-                        debug!("step:       {step_size:?}", step_size = parameter.step_size);
-                        debug!("value:      {value:?}");
+                        let value = parameter.get();
                         match value {
-                            SoundCoreParamValue::None => {}
-                            _ => {
+                            Err(err) => {
+                                error!(error = %err, "Unable to get value");
+                            }
+                            Ok(SoundCoreParamValue::None) => {}
+                            Ok(value) => {
+                                debug!(value = ?value, "Got value");
                                 feature_output.insert(parameter.description.clone(), value);
                             }
                         }
                     }
                     5 => {}
                     _ => {
-                        debug!("kind:      {kind}", kind = parameter.kind);
+                        debug!("Unrecognized kind");
                     }
                 }
             }
@@ -217,11 +233,14 @@ pub fn dump(device_id: Option<&OsStr>) -> Result<Configuration, Box<dyn Error>> 
 /// };
 /// set(None, &configuration, true);
 /// ```
-pub fn set(
-    device_id: Option<&OsStr>,
+pub fn set<I>(
+    device_id: Option<I>,
     configuration: &Configuration,
     mute: bool,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>>
+where
+    I: Into<PCWSTR>,
+{
     let endpoint = get_endpoint(device_id)?;
     let mute_unmute = mute && !endpoint.get_mute()?;
     if mute_unmute {
@@ -246,7 +265,10 @@ pub fn set(
 ///     println!("{:?}", event);
 /// }
 /// ```
-pub fn watch(device_id: Option<&OsStr>) -> Result<SoundCoreEventIterator, Box<dyn Error>> {
+pub fn watch<I>(device_id: Option<I>) -> Result<SoundCoreEventIterator, Box<dyn Error>>
+where
+    I: Into<PCWSTR>,
+{
     let endpoint = get_endpoint(device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
@@ -313,9 +335,12 @@ impl Iterator for SoundCoreAndVolumeEventIterator {
 ///     println!("{:?}", event);
 /// }
 /// ```
-pub fn watch_with_volume(
-    device_id: Option<&OsStr>,
-) -> Result<SoundCoreAndVolumeEventIterator, Box<dyn Error>> {
+pub fn watch_with_volume<I>(
+    device_id: Option<I>,
+) -> Result<SoundCoreAndVolumeEventIterator, Box<dyn Error>>
+where
+    I: Into<PCWSTR>,
+{
     let endpoint = get_endpoint(device_id)?;
     let id = endpoint.id()?;
     let clsid = endpoint.clsid()?;
@@ -403,22 +428,24 @@ fn coerce_soundcore(
 fn set_internal(configuration: &Configuration, endpoint: &Endpoint) -> Result<(), Box<dyn Error>> {
     if let Some(ref creative) = configuration.creative {
         let id = endpoint.id()?;
-        debug!("Found device {id}");
+        debug!(endpoint_id = id, "Found device");
         let clsid = endpoint.clsid()?;
         debug!(
-            "Found clsid \
-             {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
-            clsid.data1,
-            clsid.data2,
-            clsid.data3,
-            clsid.data4[0],
-            clsid.data4[1],
-            clsid.data4[2],
-            clsid.data4[3],
-            clsid.data4[4],
-            clsid.data4[5],
-            clsid.data4[6],
-            clsid.data4[7]
+            clsid = format!(
+                "{{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
+                clsid.data1,
+                clsid.data2,
+                clsid.data3,
+                clsid.data4[0],
+                clsid.data4[1],
+                clsid.data4[2],
+                clsid.data4[3],
+                clsid.data4[4],
+                clsid.data4[5],
+                clsid.data4[6],
+                clsid.data4[7],
+            ),
+            "Found clsid",
         );
         let core = SoundCore::for_device(&clsid, &id)?;
 
@@ -430,7 +457,7 @@ fn set_internal(configuration: &Configuration, endpoint: &Endpoint) -> Result<()
         for feature in core.features(0) {
             let feature = feature?;
             let feature_span =
-                trace_span!("Looking for {feature} settings...", feature = %feature.description);
+                trace_span!("Looking for feature settings...", feature = %feature.description);
             let _feature_span = feature_span.enter();
             if let Some(feature_table) = creative.get(&feature.description) {
                 unhandled_feature_names.remove(&feature.description[..]);
@@ -441,31 +468,32 @@ fn set_internal(configuration: &Configuration, endpoint: &Endpoint) -> Result<()
 
                 for parameter in feature.parameters() {
                     let mut parameter = parameter?;
-                    let parameter_span = trace_span!("Looking for {parameter} settings...", parameter = %parameter.description);
+                    let parameter_span = trace_span!("Looking for parameter settings...", parameter = %parameter.description);
                     let _parameter_span = parameter_span.enter();
                     if let Some(value) = feature_table.get(&parameter.description) {
                         unhandled_parameter_names.remove(&parameter.description[..]);
                         let value = &coerce_soundcore(&feature, &parameter, value)?;
                         if let Err(error) = parameter.set(value) {
                             error!(
-                                "Could not set parameter {feature}.{parameter}: {error}",
                                 feature = feature.description,
                                 parameter = parameter.description,
+                                error = %error,
+                                "Could not set parameter",
                             );
                         }
                     }
                 }
                 for unhandled in unhandled_parameter_names {
                     warn!(
-                        "Could not find parameter {feature}.{parameter}",
                         feature = feature.description,
                         parameter = unhandled,
+                        "Could not find parameter",
                     );
                 }
             }
         }
         for unhandled in unhandled_feature_names {
-            warn!("Could not find feature {feature}", feature = unhandled);
+            warn!(feature = unhandled, "Could not find feature");
         }
     }
     if let Some(ref endpoint_config) = configuration.endpoint {

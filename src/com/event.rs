@@ -6,7 +6,6 @@ use windows::Win32::System::Threading::{CreateEventW, SetEvent};
 use windows::Win32::System::WindowsProgramming::INFINITE;
 
 use std::pin::Pin;
-use std::ptr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
@@ -33,7 +32,7 @@ unsafe impl Sync for ComWaker {}
 
 impl ComWaker {
     pub fn new() -> Self {
-        let ready_event = unsafe { CreateEventW(ptr::null_mut(), false, false, None).unwrap() };
+        let ready_event = unsafe { CreateEventW(None, false, false, None).unwrap() };
         Self { ready_event }
     }
 

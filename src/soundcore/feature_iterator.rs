@@ -31,9 +31,9 @@ impl Iterator for SoundCoreFeatureIterator {
     fn next(&mut self) -> Option<windows::core::Result<SoundCoreFeature>> {
         unsafe {
             let span = trace_span!(
-                "Fetching feature .{context}[{index}]",
+                "Fetching feature",
                 context = self.context,
-                index = self.index
+                index = self.index,
             );
             let _span = span.enter();
             let mut info = MaybeUninit::uninit();

@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- If a parameter's value cannot be dumped, an error is logged but the operation is not aborted.
+
 ### Changed
 - `slog` has been replaced with `tracing`.
 - `winapi` has been replaced with `windows`.
