@@ -40,7 +40,7 @@ impl Iterator for SoundCoreParameterIterator {
     fn next(&mut self) -> Option<windows::core::Result<SoundCoreParameter>> {
         unsafe {
             let span = trace_span!(
-                "Fetching parameter .{context}.{feature}[{index}]...",
+                "Fetching parameter...",
                 context = self.context,
                 feature = %self.feature_description,
                 index = self.index,

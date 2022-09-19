@@ -81,7 +81,7 @@ impl SoundCoreParameter {
     }
     /// Gets the value of a parameter.
     ///
-    /// May return `Err(Win32Error { code: E_ACCESSDENIED })` when getting a
+    /// May return `SoundCoreParamValue::None` when getting a
     /// parameter that is not currently applicable.
     pub fn get(&self) -> windows::core::Result<SoundCoreParamValue> {
         // varsize -> not supported
@@ -94,19 +94,19 @@ impl SoundCoreParameter {
                 feature: self.feature_id,
                 param: self.id,
             };
-            let span = trace_span!("Fetching parameter value .{context}.{feature_id}.{id}...",);
+            let span = trace_span!(
+                "Fetching parameter value...",
+                context = self.context,
+                feature_id = self.feature_id,
+                parameter_id = self.id,
+                value = tracing::field::Empty,
+            );
             let _span = span.enter();
             let mut value = MaybeUninit::uninit();
             let value = match self.core.GetParamValue(param, value.as_mut_ptr()).ok() {
                 Ok(()) => value.assume_init(),
                 Err(error) if error.code() == E_ACCESSDENIED => {
-                    trace!(
-                        "Got parameter value .{}.{}.{} = {}",
-                        self.context,
-                        self.feature_id,
-                        self.id,
-                        "ACCESSDENIED"
-                    );
+                    trace!("Got ACCESSDENIED");
                     return Ok(SoundCoreParamValue::None);
                 }
                 Err(error) => return Err(error),
@@ -149,8 +149,8 @@ impl SoundCoreParameter {
                 },
             };
             info!(
-                "Setting {}.{} = {:?}",
-                self.feature_description, self.description, value
+                feature = self.feature_description, parameter = self.description, value = ?value,
+                "Setting value",
             );
             self.core.SetParamValue(param, param_value).ok()
         }

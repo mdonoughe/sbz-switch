@@ -152,7 +152,7 @@ fn run() -> i32 {
             0
         }
         Err(error) => {
-            error!("Unexpected error: {error}");
+            error!(error = %error, "Unexpected error");
             1
         }
     }
