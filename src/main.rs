@@ -7,6 +7,7 @@ use clap::{Arg, ArgMatches};
 use indexmap::IndexMap;
 use tracing::{debug, error};
 use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
 use windows::core::HSTRING;
 
 use std::collections::BTreeMap;
@@ -135,6 +136,7 @@ fn run() -> i32 {
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
         .init();
 
     let result = match matches.subcommand().unwrap() {

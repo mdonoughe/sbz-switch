@@ -254,12 +254,11 @@ impl From<windows::core::Error> for GetPropertyError {
 struct PropertyStore(ComObject<IPropertyStore>);
 
 impl PropertyStore {
-    #[instrument(level = "trace", skip(key), fields(key.fmtid, key.pid))]
     unsafe fn get_value(&self, key: &PROPERTYKEY) -> windows::core::Result<PROPVARIANT> {
         self.0.GetValue(key)
     }
     #[allow(clippy::cast_ptr_alignment)]
-    #[instrument(level = "trace", skip(key), fields(key.fmtid, key.pid, r#type, value))]
+    #[instrument(level = "trace", skip(key), fields(key.fmtid = ?key.fmtid, key.pid = %key.pid, r#type, value))]
     fn get_string_value(&self, key: &PROPERTYKEY) -> Result<Option<String>, GetPropertyError> {
         unsafe {
             let mut property_value = self.get_value(key)?;
