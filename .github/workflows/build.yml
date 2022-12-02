@@ -19,12 +19,24 @@ jobs:
 
     - name: rustfmt
       run: cargo fmt --check
+
     - uses: actions-rs/clippy-check@v1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build
+    - name: Build Debug
+      run: cargo build --debug --verbose
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: binaries (debug)
+        path: |
+          target/i686-pc-windows-msvc/debug/sbz-switch.exe
+          target/i686-pc-windows-msvc/debug/sbz_switch.pdb
+
+    - name: Build Release
       run: cargo build --release --verbose
+
     - uses: actions/upload-artifact@v3
       with:
         name: binaries
