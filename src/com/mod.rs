@@ -2,7 +2,6 @@ pub mod event;
 
 use std::fmt;
 use std::ops::Deref;
-use std::ptr::null_mut;
 
 use windows::core::Interface;
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
@@ -21,7 +20,7 @@ use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTME
 /// uninitialize_com();
 /// ```
 pub fn initialize_com() -> windows::core::Result<()> {
-    unsafe { CoInitializeEx(null_mut(), COINIT_APARTMENTTHREADED) }
+    unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
 }
 
 /// Unconfigures COM for the current thread by calling CoUninitialize.

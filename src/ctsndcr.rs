@@ -16,7 +16,7 @@ use futures::SinkExt;
 use windows::core::implement;
 use windows::core::interface;
 use windows::core::IUnknown;
-use windows::core::IUnknownVtbl;
+use windows::core::IUnknown_Vtbl;
 use windows::core::HRESULT;
 use windows::Win32::Foundation::E_ABORT;
 use windows::Win32::Foundation::S_OK;

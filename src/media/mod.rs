@@ -110,7 +110,7 @@ impl Endpoint {
                 .position(|i| *raw_id.offset(i) == 0)
                 .unwrap();
             let str: OsString = OsStringExt::from_wide(slice::from_raw_parts(raw_id, length));
-            CoTaskMemFree(raw_id as *mut _);
+            CoTaskMemFree(Some(raw_id as *mut _));
             Ok(str.to_string_lossy().into_owned())
         }
     }
