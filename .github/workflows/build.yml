@@ -25,7 +25,7 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build Debug
-      run: cargo build --debug --verbose
+      run: cargo build --verbose
 
     - uses: actions/upload-artifact@v3
       with:
