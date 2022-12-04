@@ -35,6 +35,7 @@ fn run() -> i32 {
         .short('d')
         .long("device")
         .value_name("DEVICE_ID")
+        .allow_invalid_utf8(true)
         .help("Specify the device to act on (get id from list-devices)");
     let format_arg = Arg::new("format")
         .short('f')
