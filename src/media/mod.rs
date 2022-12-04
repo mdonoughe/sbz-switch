@@ -102,7 +102,7 @@ impl Endpoint {
     /// Gets the ID of the endpoint.
     ///
     /// See [Endpoint ID Strings](https://docs.microsoft.com/en-us/windows/desktop/CoreAudio/endpoint-id-strings).
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", fields(value))]
     pub fn id(&self) -> windows::core::Result<String> {
         unsafe {
             let raw_id = self.device.GetId()?.0;
@@ -111,7 +111,9 @@ impl Endpoint {
                 .unwrap();
             let str: OsString = OsStringExt::from_wide(slice::from_raw_parts(raw_id, length));
             CoTaskMemFree(Some(raw_id as *mut _));
-            Ok(str.to_string_lossy().into_owned())
+            let str = str.to_string_lossy().into_owned();
+            tracing::Span::current().record("value", &str.as_str());
+            Ok(str)
         }
     }
     #[instrument(level = "trace")]
@@ -321,11 +323,21 @@ impl DeviceEnumerator {
     /// There are multiple default audio outputs in Windows.
     /// This function gets the device that would be used if the current application
     /// were to play music or sound effects (as opposed to VOIP audio).
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", fields(id))]
     pub fn get_default_audio_endpoint(&self) -> windows::core::Result<Endpoint> {
         unsafe {
             let device = self.0.GetDefaultAudioEndpoint(eRender, eConsole)?;
-            Ok(Endpoint::new(ComObject::take(device)))
+            let endpoint = Endpoint::new(ComObject::take(device));
+
+            let span = tracing::Span::current();
+            if !span.is_disabled() {
+                match endpoint.id() {
+                    Ok(id) => span.record("id", &id.as_str()),
+                    Err(error) => span.record("id", tracing::field::debug(&error)),
+                };
+            }
+
+            Ok(endpoint)
         }
     }
     /// Get a specific audio endpoint by its ID.
