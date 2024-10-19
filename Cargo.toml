@@ -12,9 +12,9 @@ edition = "2021"
 rust-version = "1.61"
 
 [dependencies]
-clap = { version = "3", features = ["cargo"] }
+clap = { version = "4", features = ["cargo"] }
 futures = "0.3"
-indexmap = "1"
+indexmap = "2"
 regex = "1"
 serde = "1"
 serde_derive = "1"
@@ -22,19 +22,21 @@ serde_json = "1"
 serde_yaml = "0.8"
 tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_info"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-toml = "0.5"
+toml = "0.8"
+toml_edit = { version = "0.22", features = ["serde"] }
+windows-core = "0.58.0"
 
 [dependencies.windows]
-version = "0.43.0"
+version = "0.58.0"
 features = [
     "implement",
-    "interface",
     "Win32_Foundation",
     "Win32_Media_Audio_Endpoints",
     "Win32_Security",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Threading",
+    "Win32_System_Variant",
     "Win32_System_WindowsProgramming",
     "Win32_UI_Shell_PropertiesSystem",
 ]

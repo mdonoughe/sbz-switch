@@ -47,7 +47,7 @@ impl Iterator for SoundCoreFeatureIterator {
                 Err(error) if error.code() == E_FAIL => return None,
                 Err(error) => return Some(Err(error)),
             };
-            span.record("info", &tracing::field::debug(&info));
+            span.record("info", tracing::field::debug(&info));
             self.index += 1;
             match info.feature_id {
                 0 => None,

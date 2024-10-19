@@ -7,7 +7,6 @@ mod event;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt::{self, Debug};
-use std::isize;
 use std::os::windows::ffi::OsStringExt;
 use std::slice;
 use std::sync::Mutex;
@@ -25,11 +24,11 @@ use windows::Win32::Media::Audio::{
     eConsole, eRender, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator,
     AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE_ACTIVE,
 };
-use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PROPVARIANT};
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ, VT_EMPTY, VT_LPWSTR,
-};
+use windows::Win32::System::Com::StructuredStorage::PropVariantClear;
+use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
+use windows::Win32::System::Variant::VT_LPWSTR;
 use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
+use windows_core::PROPVARIANT;
 
 pub(crate) use self::event::VolumeEvents;
 pub use self::event::VolumeNotification;
@@ -112,7 +111,7 @@ impl Endpoint {
             let str: OsString = OsStringExt::from_wide(slice::from_raw_parts(raw_id, length));
             CoTaskMemFree(Some(raw_id as *mut _));
             let str = str.to_string_lossy().into_owned();
-            tracing::Span::current().record("value", &str.as_str());
+            tracing::Span::current().record("value", str.as_str());
             Ok(str)
         }
     }
@@ -196,7 +195,7 @@ impl Endpoint {
     pub fn get_volume(&self) -> windows::core::Result<f32> {
         unsafe {
             let volume = self.volume()?.GetMasterVolumeLevelScalar()?;
-            tracing::Span::current().record("volume", &volume);
+            tracing::Span::current().record("volume", volume);
             Ok(volume)
         }
     }
@@ -264,17 +263,22 @@ impl PropertyStore {
     fn get_string_value(&self, key: &PROPERTYKEY) -> Result<Option<String>, GetPropertyError> {
         unsafe {
             let mut property_value = self.get_value(key)?;
-            tracing::Span::current().record("type", &property_value.Anonymous.Anonymous.vt.0);
-            if property_value.Anonymous.Anonymous.vt == VT_EMPTY {
+            tracing::Span::current().record("type", property_value.as_raw().Anonymous.Anonymous.vt);
+            if property_value.is_empty() {
                 return Ok(None);
             }
-            if property_value.Anonymous.Anonymous.vt != VT_LPWSTR {
+            if property_value.as_raw().Anonymous.Anonymous.vt != VT_LPWSTR.0 {
                 PropVariantClear(&mut property_value).unwrap();
                 return Err(GetPropertyError::UnexpectedType(
-                    property_value.Anonymous.Anonymous.vt.0,
+                    property_value.as_raw().Anonymous.Anonymous.vt,
                 ));
             }
-            let chars = property_value.Anonymous.Anonymous.Anonymous.pwszVal.0;
+            let chars = property_value
+                .as_raw()
+                .Anonymous
+                .Anonymous
+                .Anonymous
+                .pwszVal;
             let length = (0..isize::MAX).position(|i| *chars.offset(i) == 0);
             let str = length.map(|length| {
                 OsString::from_wide(slice::from_raw_parts(chars, length))
@@ -283,7 +287,7 @@ impl PropertyStore {
             });
             PropVariantClear(&mut property_value).unwrap();
             let str = str.unwrap();
-            tracing::Span::current().record("value", &str.as_str());
+            tracing::Span::current().record("value", str.as_str());
             Ok(Some(str))
         }
     }
@@ -332,7 +336,7 @@ impl DeviceEnumerator {
             let span = tracing::Span::current();
             if !span.is_disabled() {
                 match endpoint.id() {
-                    Ok(id) => span.record("id", &id.as_str()),
+                    Ok(id) => span.record("id", id.as_str()),
                     Err(error) => span.record("id", tracing::field::debug(&error)),
                 };
             }
@@ -348,7 +352,7 @@ impl DeviceEnumerator {
     {
         unsafe {
             let id: PCWSTR = id.into();
-            tracing::Span::current().record("id", &tracing::field::display(id.display()));
+            tracing::Span::current().record("id", tracing::field::display(id.display()));
             let device = self.0.GetDevice(id)?;
             Ok(Endpoint::new(ComObject::take(device)))
         }
@@ -368,7 +372,7 @@ impl AudioEndpointVolumeCallback {
     }
 }
 
-impl IAudioEndpointVolumeCallback_Impl for AudioEndpointVolumeCallback {
+impl IAudioEndpointVolumeCallback_Impl for AudioEndpointVolumeCallback_Impl {
     fn OnNotify(&self, notify: *mut AUDIO_VOLUME_NOTIFICATION_DATA) -> windows::core::Result<()> {
         unsafe {
             match executor::block_on(self.sender.lock().unwrap().send(VolumeNotification {

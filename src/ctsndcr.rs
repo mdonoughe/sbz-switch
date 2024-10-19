@@ -116,7 +116,7 @@ pub(crate) unsafe trait IEventNotify: IUnknown {
 
 #[interface("b353c442-c49d-4532-9e3a-1b20a182fd00")]
 pub(crate) unsafe trait ICallback: IUnknown {
-    unsafe fn EventCallback(&self, eventInfo: EventInfo) -> HRESULT;
+    fn EventCallback(&self, eventInfo: EventInfo) -> HRESULT;
 }
 
 /// Describes an event that has occurred.
@@ -141,7 +141,7 @@ impl Callback {
     }
 }
 
-impl ICallback_Impl for Callback {
+impl ICallback_Impl for Callback_Impl {
     unsafe fn EventCallback(&self, event_info: EventInfo) -> HRESULT {
         match executor::block_on(self.sender.lock().unwrap().send(event_info)) {
             Ok(()) => S_OK,

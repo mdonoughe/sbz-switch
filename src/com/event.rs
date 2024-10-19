@@ -2,8 +2,7 @@ use futures::task::{self, ArcWake};
 use futures::Stream;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Com::{CoWaitForMultipleObjects, CWMO_DISPATCH_CALLS};
-use windows::Win32::System::Threading::{CreateEventW, SetEvent};
-use windows::Win32::System::WindowsProgramming::INFINITE;
+use windows::Win32::System::Threading::{CreateEventW, SetEvent, INFINITE};
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -16,14 +15,14 @@ struct ComWaker {
 impl ArcWake for ComWaker {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         unsafe {
-            SetEvent(arc_self.ready_event);
+            _ = SetEvent(arc_self.ready_event);
         }
     }
 }
 
 impl Drop for ComWaker {
     fn drop(&mut self) {
-        unsafe { CloseHandle(self.ready_event) };
+        unsafe { _ = CloseHandle(self.ready_event) };
     }
 }
 
@@ -69,7 +68,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let waker = task::waker_ref(&self.waker);
-        let context = &mut Context::from_waker(&*waker);
+        let context = &mut Context::from_waker(&waker);
         loop {
             match Pin::new(&mut self.inner).poll_next(context) {
                 Poll::Ready(Some(item)) => break Some(item),

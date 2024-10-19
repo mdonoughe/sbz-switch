@@ -1,4 +1,3 @@
-use std::mem;
 use std::mem::MaybeUninit;
 use std::str;
 
@@ -111,7 +110,7 @@ impl SoundCoreParameter {
                 }
                 Err(error) => return Err(error),
             };
-            span.record("value", &tracing::field::debug(&value));
+            span.record("value", tracing::field::debug(&value));
             Ok(convert_param_value(&value))
         }
     }
@@ -144,7 +143,7 @@ impl SoundCoreParameter {
                         }
                     }
                     SoundCoreParamValue::U32(u) => u,
-                    SoundCoreParamValue::I32(i) => mem::transmute(i),
+                    SoundCoreParamValue::I32(i) => i as u32,
                     _ => panic!("tried to set parameter with nothing"),
                 },
             };
@@ -158,13 +157,11 @@ impl SoundCoreParameter {
 }
 
 fn convert_param_value(value: &ParamValue) -> SoundCoreParamValue {
-    unsafe {
-        match value.kind {
-            0 => SoundCoreParamValue::Float(f32::from_bits(value.value)),
-            1 => SoundCoreParamValue::Bool(value.value != 0),
-            2 => SoundCoreParamValue::U32(value.value),
-            3 => SoundCoreParamValue::I32(mem::transmute(value.value)),
-            _ => SoundCoreParamValue::None,
-        }
+    match value.kind {
+        0 => SoundCoreParamValue::Float(f32::from_bits(value.value)),
+        1 => SoundCoreParamValue::Bool(value.value != 0),
+        2 => SoundCoreParamValue::U32(value.value),
+        3 => SoundCoreParamValue::I32(value.value as i32),
+        _ => SoundCoreParamValue::None,
     }
 }

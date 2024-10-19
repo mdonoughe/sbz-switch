@@ -57,7 +57,7 @@ impl Iterator for SoundCoreParameterIterator {
                 Err(error) if error.code() == E_FAIL => return None,
                 Err(error) => return Some(Err(error)),
             };
-            span.record("info", &tracing::field::debug(&info));
+            span.record("info", tracing::field::debug(&info));
             self.index += 1;
             match info.param.feature {
                 0 => None,

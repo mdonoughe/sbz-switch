@@ -20,7 +20,7 @@ use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTME
 /// uninitialize_com();
 /// ```
 pub fn initialize_com() -> windows::core::Result<()> {
-    unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+    unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok() }
 }
 
 /// Unconfigures COM for the current thread by calling CoUninitialize.

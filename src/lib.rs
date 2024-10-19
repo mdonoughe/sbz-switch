@@ -398,7 +398,7 @@ fn coerce_soundcore(
         (&SoundCoreParamValue::U32(i), 2) => Ok(SoundCoreParamValue::U32(i)),
         (&SoundCoreParamValue::I32(i), 2) if 0 <= i => Ok(SoundCoreParamValue::U32(i as u32)),
         (&SoundCoreParamValue::I32(i), 3) => Ok(SoundCoreParamValue::I32(i)),
-        (&SoundCoreParamValue::U32(i), 3) if i <= i32::max_value() as u32 => {
+        (&SoundCoreParamValue::U32(i), 3) if i <= i32::MAX as u32 => {
             Ok(SoundCoreParamValue::I32(i as i32))
         }
         _ => {
